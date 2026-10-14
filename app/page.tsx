@@ -3,27 +3,31 @@ import { ThemeToggle } from "@/components/ui/theme-toggle";
 import { APP_NAME, APP_TAGLINE } from "@/lib/config";
 
 /**
- * Temporary home page for Phase 1. In Phase 3 this becomes onboarding for
- * new visitors and a redirect to /today for signed-in users.
+ * Welcome screen. In Phase 3 this becomes onboarding + sign-in for new
+ * visitors, and signed-in users skip straight to /today.
  */
 export default function Home() {
   return (
-    <main className="pt-safe relative mx-auto flex min-h-dvh max-w-md flex-col justify-center px-6">
+    <main className="pt-safe pb-safe relative mx-auto flex min-h-dvh max-w-md flex-col justify-center px-6">
       <div className="pt-safe absolute right-3 top-2">
         <ThemeToggle />
       </div>
-      <div className="mb-6 grid size-16 place-items-center rounded-[18px] bg-tint text-3xl text-on-tint shadow-float">
-        ✦
-      </div>
+      <div className="glass-card mb-6 grid size-20 place-items-center rounded-[24px] text-4xl">✦</div>
       <h1 className="text-large-title">{APP_NAME}</h1>
       <p className="mt-2 text-body text-secondary-label">{APP_TAGLINE}</p>
       <Link
-        href="/design"
-        className="mt-8 inline-flex h-[52px] items-center justify-center rounded-button bg-tint text-headline text-on-tint shadow-card"
+        href="/today"
+        className="mt-10 inline-flex h-[52px] items-center justify-center rounded-full bg-tint text-headline text-on-tint shadow-[inset_0_1px_0_rgb(255_255_255/0.35),var(--elev-float)] transition-transform active:scale-[0.97]"
       >
-        View the design system
+        Open my week
       </Link>
-      <p className="mt-3 text-center text-footnote text-tertiary-label">Phase 1 · Setup & design system</p>
+      <Link
+        href="/design"
+        className="glass-card mt-3 inline-flex h-[52px] items-center justify-center rounded-full text-headline"
+      >
+        Design system
+      </Link>
+      <p className="mt-4 text-center text-footnote text-tertiary-label">Preview · sample data</p>
     </main>
   );
 }

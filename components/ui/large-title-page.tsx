@@ -30,7 +30,7 @@ export function LargeTitlePage({
   className,
 }: {
   title: string;
-  subtitle?: string;
+  subtitle?: ReactNode;
   leading?: ReactNode;
   trailing?: ReactNode;
   children: ReactNode;
@@ -42,7 +42,7 @@ export function LargeTitlePage({
   const largeTitleScale = useTransform(scrollY, [-100, 0], [1.1, 1], { clamp: true });
 
   return (
-    <div className={cn("min-h-dvh pb-28", className)}>
+    <div className={cn("min-h-dvh pb-36", className)}>
       <header className="pt-safe sticky top-0 z-30">
         <motion.div
           aria-hidden
@@ -65,7 +65,7 @@ export function LargeTitlePage({
         >
           {title}
         </motion.h1>
-        {subtitle && <p className="text-subhead text-secondary-label">{subtitle}</p>}
+        {subtitle && <div className="text-subhead text-secondary-label">{subtitle}</div>}
         <div className="mt-5">{children}</div>
       </div>
     </div>

@@ -9,6 +9,7 @@ import {
   useSyncExternalStore,
   type ReactNode,
 } from "react";
+import { ToastProvider } from "@/components/ui/toast";
 import {
   isThemePreference,
   resolveTheme,
@@ -104,7 +105,9 @@ export function useTheme(): ThemeContextValue {
 export function Providers({ children }: { children: ReactNode }) {
   return (
     <MotionConfig reducedMotion="user">
-      <ThemeProvider>{children}</ThemeProvider>
+      <ThemeProvider>
+        <ToastProvider>{children}</ToastProvider>
+      </ThemeProvider>
     </MotionConfig>
   );
 }

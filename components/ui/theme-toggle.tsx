@@ -4,7 +4,7 @@ import { Monitor, Moon, Sun } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useTheme } from "@/components/providers";
 import { cn } from "@/lib/cn";
-import { spring } from "@/lib/design/motion";
+import { fluid } from "@/lib/design/motion";
 import type { ThemePreference } from "@/lib/theme";
 
 /** Tap order: system → light → dark → system. */
@@ -32,7 +32,7 @@ export function ThemeToggle({ className }: { className?: string }) {
       type="button"
       onClick={() => setPreference(next)}
       whileTap={{ scale: 0.88 }}
-      transition={spring.snappy}
+      transition={fluid}
       aria-label={`Theme: ${LABEL[preference]}. Switch to ${LABEL[next]}`}
       title={`Theme: ${LABEL[preference]}`}
       className={cn(
@@ -47,7 +47,7 @@ export function ThemeToggle({ className }: { className?: string }) {
           initial={{ rotate: -90, scale: 0.4, opacity: 0 }}
           animate={{ rotate: 0, scale: 1, opacity: 1 }}
           exit={{ rotate: 90, scale: 0.4, opacity: 0 }}
-          transition={spring.bouncy}
+          transition={fluid}
         >
           <Icon aria-hidden size={22} />
         </motion.span>

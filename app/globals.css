@@ -46,6 +46,14 @@
   /* Frosted glass used by the nav bar, tab bar and sheets. */
   --glass: rgb(249 249 249 / 0.72);
   --glass-border: rgb(0 0 0 / 0.08);
+  /* "Liquid glass": translucent cards with a bright top edge, like light
+   * catching the rim of a glass pane. */
+  --glass-card: rgb(255 255 255 / 0.62);
+  --glass-edge: rgb(255 255 255 / 0.75);
+  --glass-highlight: rgb(255 255 255 / 0.9);
+  --lens: rgb(255 255 255 / 0.85);
+  /* The slowly drifting color blobs behind everything. */
+  --orb-opacity: 0.42;
 
   /* Task colors. Users pick one per task/event; blocks are tinted with it.
    * Keep these in sync with TASK_COLORS in lib/design/tokens.ts — a unit
@@ -87,6 +95,11 @@
 
   --glass: rgb(29 29 31 / 0.72);
   --glass-border: rgb(255 255 255 / 0.08);
+  --glass-card: rgb(28 28 30 / 0.55);
+  --glass-edge: rgb(255 255 255 / 0.1);
+  --glass-highlight: rgb(255 255 255 / 0.14);
+  --lens: rgb(255 255 255 / 0.14);
+  --orb-opacity: 0.3;
 
   /* Dark-mode variants are slightly brighter so they pop on black. */
   --task-blue: #0a84ff;
@@ -124,6 +137,8 @@
   --color-danger: var(--danger);
   --color-glass: var(--glass);
   --color-glass-border: var(--glass-border);
+  --color-glass-edge: var(--glass-edge);
+  --color-lens: var(--lens);
 
   /* --- Typography: system font first, Inter as the cross-platform fallback.
    * On iPhone/Mac this renders San Francisco; on Android/Windows, Inter. --- */
@@ -245,6 +260,65 @@ body {
   background: var(--glass);
   -webkit-backdrop-filter: saturate(180%) blur(20px);
   backdrop-filter: saturate(180%) blur(20px);
+}
+
+/* A liquid-glass card: see-through, blurred, with a lit top rim. Content
+ * behind it (the drifting orbs) bleeds through softly. */
+@utility glass-card {
+  background: var(--glass-card);
+  -webkit-backdrop-filter: saturate(180%) blur(28px);
+  backdrop-filter: saturate(180%) blur(28px);
+  border: 1px solid var(--glass-edge);
+  box-shadow:
+    inset 0 1px 0 var(--glass-highlight),
+    var(--elev-card);
+}
+
+/* The floating tab bar capsule: glass-card, but rounder and higher. */
+@utility glass-pill {
+  background: var(--glass-card);
+  -webkit-backdrop-filter: saturate(200%) blur(30px);
+  backdrop-filter: saturate(200%) blur(30px);
+  border: 1px solid var(--glass-edge);
+  box-shadow:
+    inset 0 1px 0 var(--glass-highlight),
+    var(--elev-float);
+}
+
+/* Liquid background orbs. Each drifts on its own long loop (transform only,
+ * so it is cheap for the GPU), which makes the glass above feel alive. */
+@keyframes drift-a {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  33% {
+    transform: translate3d(12vw, 8vh, 0) scale(1.15);
+  }
+  66% {
+    transform: translate3d(-8vw, 14vh, 0) scale(0.92);
+  }
+}
+@keyframes drift-b {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) scale(1.05);
+  }
+  50% {
+    transform: translate3d(-14vw, -10vh, 0) scale(0.9);
+  }
+}
+@keyframes drift-c {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) scale(0.95);
+  }
+  40% {
+    transform: translate3d(10vw, -12vh, 0) scale(1.12);
+  }
+  75% {
+    transform: translate3d(-6vw, 6vh, 0) scale(1);
+  }
 }
 
 /* Loading skeleton shimmer. */

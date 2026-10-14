@@ -144,3 +144,110 @@ adapts to any background.
 - **WCAG AA**: accessibility standard; 4.5:1 contrast for body text.
 - **Safe area**: the parts of an iPhone screen not covered by the notch or
   home indicator (`env(safe-area-inset-*)`).
+
+---
+
+## Interlude: every screen, and a "liquid" redesign
+
+### What we built, in plain English
+
+Before wiring up a database, we designed every tab with realistic sample
+data: Today, Week, Streaks, Friends and Settings. We split the long design
+system page into four focused screens. And we made the whole app feel more
+like one fluid material: frosted-glass cards, a floating glass tab bar with a
+sliding "lens", slowly drifting color blobs behind everything, and **one**
+animation spring used everywhere instead of five presets.
+
+Designing with fake data first is a real industry practice. It lets you find
+UX problems (and the shape of the data you need) before you commit to a
+database schema in Phase 2.
+
+### Key concepts
+
+**1. Route groups, layouts and templates (Next.js App Router).**
+`app/(tabs)/` is a *route group*: the parentheses organize files without
+adding `/tabs` to the URL. Its `layout.tsx` is **not** re-mounted when you
+switch tabs, so it's where shared state (`PlannerProvider`) and the tab bar
+live. Its `template.tsx` **is** re-mounted on every navigation, so it's where
+the page transition goes.
+
+**2. Shared layout animations (`layoutId`).**
+The tab bar's lens, the Week day picker and every chip row use one
+`motion.span` with a `layoutId`. When selection changes, React renders it
+somewhere else and Motion animates it from the old spot to the new one.
+Because the tab bar lives in the persistent layout, the lens even glides
+between *pages*.
+
+**3. One motion token.**
+`lib/design/motion.ts` now exports a single spring, `fluid`. Fewer knobs means
+a more consistent feel, and it's easier to explain: "every animation in the
+app is the same physical material."
+
+**4. Glassmorphism done carefully.**
+`glass-card` is a translucent background, `backdrop-filter: blur()`, a
+1px border, and an inset top highlight (light catching the rim). The blobs
+behind are pure CSS keyframes that only animate `transform`, which the GPU
+handles cheaply, and they freeze under Reduce Motion.
+
+**5. Time and hydration.**
+The server renders HTML before it knows the user's clock or time zone. If it
+printed "9:41 AM" and the browser then printed "3:12 PM", React would throw a
+hydration error. `useNow()` uses `useSyncExternalStore` with a `null` server
+snapshot, so time-dependent UI renders a skeleton on the server and fills in
+on the client.
+
+**6. Interval math: the heart of free time.**
+`lib/planner/free-time.ts` has three small algorithms:
+- `mergeIntervals`: sort by start, then sweep once, extending the last merged
+  span whenever the next one overlaps. O(n log n).
+- `freeWindows`: walk the merged busy list with a cursor and record the gaps.
+- `sharedFreeWindows`: free time for two people is just the free windows of
+  *both* busy lists combined. It needs only busy spans, never event titles,
+  which is exactly the privacy rule for Friends.
+
+**7. End-to-end tests with a controlled clock.**
+`tests/e2e/app.spec.ts` drives a real browser through the app. Playwright's
+`page.clock.install({ time })` starts every test at Wednesday 10:40 AM, so
+"Happening now: Calculus" is deterministic no matter when the tests run.
+
+### Bugs we hit (great interview stories)
+
+- **Invalid HTML caused a hydration error.** The loading skeleton (a `<div>`)
+  was rendered inside the subtitle's `<p>`. Browsers "fix" that by moving the
+  div out, so the DOM no longer matched React's output (React error #418).
+  Fix: the subtitle wrapper is now a `<div>`.
+- **Entrance animations hid server-rendered content.** `initial={{ opacity: 0 }}`
+  means the server sends HTML with opacity 0, so the page is blank until
+  JavaScript loads. `useEntrance()` skips entrance animations on the very
+  first load; later navigations still animate.
+- **An "it doesn't work" that was correct.** Adding a task failed at 11:14 PM
+  because the planner only schedules until 11 PM. The fix was UX, not logic:
+  the sheet now starts at "Tomorrow" late at night.
+
+### Interview questions
+
+**Q1. How do you show two friends' shared free time without leaking their
+schedules?**
+Each person's calendar is reduced to busy intervals (start/end only), and
+event titles never leave their account. To find time together I combine both
+busy lists, merge overlapping intervals (sort plus one linear sweep), and
+take the gaps inside the visible day that are at least 45 minutes long. The UI
+only ever draws busy/free spans. In Phase 9 that reduction happens on the
+server with row-level security, so the client never even receives titles.
+
+**Q2. What's the difference between a layout and a template in Next.js, and
+why did you use both?**
+A layout persists across navigations between its child routes; a template is
+re-created on each navigation. I put the planner state and the tab bar in the
+layout so state survives tab switches and the tab bar's sliding indicator can
+animate between pages. I put the page transition in the template because it
+needs to run every time the page changes.
+
+**Q3. How do you avoid hydration errors with time-based UI?**
+The server can't know the user's local time, so any rendering based on "now"
+would differ between server and client. My `useNow` hook uses
+`useSyncExternalStore` with a server snapshot of `null`, so the server and the
+first client render both show a skeleton, then the client fills in real
+times. I also learned that invalid HTML nesting (a div inside a p) causes
+hydration errors too, because the browser rewrites the DOM before React
+hydrates it.

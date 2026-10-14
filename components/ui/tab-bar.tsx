@@ -5,7 +5,7 @@ import { motion } from "motion/react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/cn";
-import { spring } from "@/lib/design/motion";
+import { fluid } from "@/lib/design/motion";
 
 export type TabItem = {
   href: string;
@@ -13,7 +13,7 @@ export type TabItem = {
   icon: LucideIcon;
 };
 
-/** The app's five main sections. Routes are built in Phases 4, 8, 9, 10. */
+/** The app's five main sections. */
 export const APP_TABS: TabItem[] = [
   { href: "/today", label: "Today", icon: CalendarDays },
   { href: "/week", label: "Week", icon: CalendarRange },
@@ -23,64 +23,55 @@ export const APP_TABS: TabItem[] = [
 ];
 
 /**
- * Frosted-glass tab bar pinned to the bottom of the screen.
+ * Floating liquid-glass tab bar.
  *
- * - `glass` (globals.css) = translucent background + backdrop blur, so the
- *   schedule scrolling underneath shows through, blurred.
- * - `pb-safe` adds padding for the iPhone home indicator.
- * - The active tab is tinted; tapping an icon gives a tiny spring "pop".
+ * Instead of a bar glued to the bottom edge, it is a capsule hovering above
+ * the content (`glass-pill`). Behind the active tab sits a brighter glass
+ * "lens". The lens is ONE motion.span with a shared `layoutId`: when you
+ * switch tabs, React renders it inside a different <li>, and Motion slides
+ * and stretches it there on the app's fluid spring.
  *
- * `fixed={false}` renders it inline, which the /design preview uses.
+ * This component lives in app/(tabs)/layout.tsx, which stays mounted while
+ * you move between tabs. That's what lets the lens animate across pages.
  */
-export function TabBar({
-  items = APP_TABS,
-  activeHref,
-  onSelect,
-  fixed = true,
-}: {
-  items?: TabItem[];
-  activeHref?: string;
-  onSelect?: (href: string) => void;
-  fixed?: boolean;
-}) {
+export function TabBar({ items = APP_TABS }: { items?: TabItem[] }) {
   const pathname = usePathname();
-  const current = activeHref ?? pathname;
 
   return (
     <nav
       aria-label="Main"
-      className={cn(
-        "glass pb-safe z-30 border-t border-glass-border",
-        fixed && "fixed inset-x-0 bottom-0",
-      )}
+      className="pb-safe pointer-events-none fixed inset-x-0 bottom-0 z-30 px-3"
     >
-      <ul className="mx-auto grid max-w-2xl" style={{ gridTemplateColumns: `repeat(${items.length}, 1fr)` }}>
+      <ul className="glass-pill pointer-events-auto mx-auto mb-3 flex max-w-md rounded-full p-1.5">
         {items.map(({ href, label, icon: Icon }) => {
-          const active = current === href || current.startsWith(href + "/");
+          const active = pathname === href || pathname.startsWith(href + "/");
           return (
-            <li key={href}>
+            <li key={href} className="flex-1">
               <Link
                 href={href}
-                // In preview mode the hrefs are only labels; don't prefetch them.
-                prefetch={onSelect ? false : undefined}
                 aria-current={active ? "page" : undefined}
-                onClick={
-                  onSelect
-                    ? (e) => {
-                        e.preventDefault();
-                        onSelect(href);
-                      }
-                    : undefined
-                }
                 className={cn(
-                  "flex h-[52px] flex-col items-center justify-center gap-0.5 text-[10px] font-medium",
+                  "relative flex h-14 flex-col items-center justify-center gap-0.5 rounded-full",
+                  "text-[10px] font-semibold transition-colors duration-300",
                   active ? "text-tint" : "text-secondary-label",
                 )}
               >
-                <motion.span whileTap={{ scale: 0.85 }} transition={spring.snappy}>
-                  <Icon aria-hidden size={24} strokeWidth={active ? 2.4 : 1.9} />
+                {active && (
+                  <motion.span
+                    layoutId="tab-lens"
+                    transition={fluid}
+                    className="absolute inset-0 rounded-full bg-lens shadow-[inset_0_1px_0_var(--glass-highlight)]"
+                  />
+                )}
+                <motion.span
+                  className="relative"
+                  whileTap={{ scale: 0.82 }}
+                  animate={{ y: active ? -1 : 0, scale: active ? 1.08 : 1 }}
+                  transition={fluid}
+                >
+                  <Icon aria-hidden size={23} strokeWidth={active ? 2.4 : 1.9} />
                 </motion.span>
-                {label}
+                <span className="relative">{label}</span>
               </Link>
             </li>
           );

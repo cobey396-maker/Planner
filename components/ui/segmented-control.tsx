@@ -3,7 +3,7 @@
 import { motion } from "motion/react";
 import { useId } from "react";
 import { cn } from "@/lib/cn";
-import { spring } from "@/lib/design/motion";
+import { fluid } from "@/lib/design/motion";
 
 /**
  * iOS segmented control (e.g. "Day | Week", "System | Light | Dark").
@@ -33,7 +33,7 @@ export function SegmentedControl<T extends string>({
     <div
       role="radiogroup"
       aria-label={label}
-      className={cn("grid rounded-[10px] bg-fill p-0.5", className)}
+      className={cn("grid rounded-full bg-fill p-1", className)}
       style={{ gridTemplateColumns: `repeat(${options.length}, 1fr)` }}
     >
       {options.map((opt) => {
@@ -45,13 +45,13 @@ export function SegmentedControl<T extends string>({
             role="radio"
             aria-checked={selected}
             onClick={() => onChange(opt.value)}
-            className="relative h-8 rounded-lg text-subhead font-medium"
+            className="relative h-9 rounded-full text-subhead font-medium"
           >
             {selected && (
               <motion.span
                 layoutId={layoutId}
-                transition={spring.snappy}
-                className="absolute inset-0 rounded-lg bg-surface shadow-card dark:bg-[#636366]"
+                transition={fluid}
+                className="absolute inset-0 rounded-full bg-lens shadow-card shadow-[inset_0_1px_0_var(--glass-highlight)]"
               />
             )}
             <span className="relative">{opt.label}</span>

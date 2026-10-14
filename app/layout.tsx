@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
 import { Providers } from "@/components/providers";
+import { LiquidBackground } from "@/components/ui/liquid-background";
 import { APP_NAME, APP_TAGLINE } from "@/lib/config";
 import { THEME_SCRIPT } from "@/lib/theme";
 import "./globals.css";
@@ -41,7 +42,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body>
         <Providers>
           {/* Vaul scales this wrapper back when a sheet opens (iOS effect). */}
-          <div vaul-drawer-wrapper="" className="min-h-dvh bg-bg">
+          {/* `isolate` starts a new stacking context so the -z-10 liquid
+              background paints above this wrapper's own background. */}
+          <div vaul-drawer-wrapper="" className="isolate min-h-dvh bg-bg">
+            <LiquidBackground />
             {children}
           </div>
         </Providers>
