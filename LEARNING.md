@@ -257,7 +257,12 @@ hydrates it.
 ## Add-on: confetti when a task is completed
 
 `lib/confetti.ts` draws celebration confetti on one shared full-screen
-`<canvas>` with zero dependencies. Each particle has a velocity; every
+`<canvas>` with zero dependencies. There are three shapes: curly
+**streamers** (a sine wave whose phase shifts every frame, so the string
+wiggles), paper **strips** that fake a 3D tumble by squashing their height
+with `cos(flip)`, and small **dots**. Streamers are "lighter": less gravity
+and more drag, so they float down slower, like real ribbon. Each piece has a
+velocity; every
 animation frame adds gravity (`vy += 0.35`), applies air drag (`vx *= 0.98`),
 spins and fades it, and the `requestAnimationFrame` loop stops itself once all
 particles are invisible. The canvas is sized by `devicePixelRatio` so it stays
