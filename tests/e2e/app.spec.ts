@@ -80,6 +80,44 @@ test("no confetti for people who turn on Reduce Motion", async ({ page }) => {
   await expect(page.locator("#confetti-canvas")).toHaveCount(0);
 });
 
+test("sign-up validates the form, then welcomes you into the app", async ({ page }) => {
+  const errors = await openAt(page, "/");
+  await expect(page.getByRole("heading", { name: "Create your account" })).toBeVisible();
+
+  // Submitting empty shows a friendly error on every field.
+  await page.getByRole("button", { name: "Create account" }).click();
+  await expect(page.getByText("What should we call you?")).toBeVisible();
+  await expect(page.getByText("Enter a valid email, like you@example.com")).toBeVisible();
+
+  // Errors clear as soon as each field is fixed.
+  await page.getByLabel("Name").fill("Cobey");
+  await expect(page.getByText("What should we call you?")).toHaveCount(0);
+  await page.getByLabel("Email").fill("Cobey@Example.com");
+  await page.getByLabel("Password", { exact: true }).fill("short");
+  await expect(page.getByText("Use at least 8 characters")).toBeVisible();
+  await page.getByLabel("Password", { exact: true }).fill("Planner12345!");
+  await expect(page.getByText("Strong")).toBeVisible();
+
+  await page.getByRole("button", { name: "Create account" }).click();
+  await expect(page).toHaveURL(/\/today$/);
+  await expect(page.getByRole("status")).toHaveText(/Welcome, Cobey!/);
+
+  // Settings greets you by name; signing out returns to the front door.
+  await page.getByRole("link", { name: "Settings" }).click();
+  await expect(page.getByText("cobey@example.com")).toBeVisible();
+  await page.getByRole("button", { name: "Sign out" }).click();
+  await expect(page.getByRole("heading", { name: "Create your account" })).toBeVisible();
+  expect(errors).toEqual([]);
+});
+
+test("switching to sign in hides the name field", async ({ page }) => {
+  await openAt(page, "/");
+  await page.getByRole("button", { name: "Sign in" }).click();
+  await expect(page.getByRole("heading", { name: "Welcome back" })).toBeVisible();
+  await expect(page.getByLabel("Name")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Sign in", exact: true })).toBeVisible();
+});
+
 test("the theme switch in Settings flips the whole app", async ({ page }) => {
   await openAt(page, "/settings");
   await page.getByRole("radio", { name: "Dark" }).click();

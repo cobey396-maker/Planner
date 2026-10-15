@@ -280,3 +280,30 @@ in an interview:
 - **Reduce Motion is respected.** If the OS setting is on, no confetti (the
   "+10 points" toast still confirms the action). A unit test and an e2e test
   cover both cases.
+
+---
+
+## Add-on: the sign-up screen
+
+The root page (`/`) is now the front door: **Create your account**, with a
+**Sign in** mode, Apple/Google buttons, and "Explore with sample data". Real
+accounts arrive with Supabase Auth in Phase 3; the screen is built so only the
+`submit` function changes then.
+
+Key concepts:
+
+- **One schema, two places.** `lib/auth/schema.ts` defines the rules with zod.
+  The browser uses it for instant feedback; in Phase 3 the server runs the
+  same schema, because client-side checks can always be bypassed.
+- **Normalize, then validate.** The email is trimmed and lowercased *before*
+  the format check (`z.string().trim().toLowerCase().pipe(z.email())`), so a
+  trailing space from autofill doesn't fail. A unit test caught this.
+- **Friendly validation timing.** No red while you type your first attempt; a
+  field is checked when you leave it; after the first submit, errors update
+  live and vanish the moment they're fixed.
+- **Accessible forms.** Real `<label>`s, `aria-invalid`, errors linked with
+  `aria-describedby` and announced with `role="alert"`, and the right
+  `autocomplete` values (`new-password` vs `current-password`) so password
+  managers offer to generate or fill passwords.
+- **Never store passwords client-side.** Until Phase 3 only the name and email
+  are remembered locally so Settings can greet you; sign out clears them.

@@ -2,6 +2,7 @@
 
 import { Bell, CalendarClock, FileText, Globe, Moon, Palette, Shield, Sunrise, Users } from "lucide-react";
 import { motion } from "motion/react";
+import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { useTheme } from "@/components/providers";
 import { Avatar } from "@/components/ui/avatar";
@@ -11,6 +12,7 @@ import { Chip } from "@/components/ui/chip";
 import { LargeTitlePage } from "@/components/ui/large-title-page";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { Switch } from "@/components/ui/switch";
+import { clearProfile, useProfile } from "@/lib/auth/profile";
 import { useEntrance } from "@/lib/design/entrance";
 import { fadeUp, stagger } from "@/lib/design/motion";
 import type { ThemePreference } from "@/lib/theme";
@@ -28,6 +30,8 @@ export function SettingsScreen() {
   const entrance = useEntrance();
   const now = useNow();
   const { preference, setPreference } = useTheme();
+  const router = useRouter();
+  const profile = useProfile();
   const [notify, setNotify] = useState({ upcoming: true, missed: true, friends: true, recap: false });
   const [lead, setLead] = useState(15);
   const [weekStart, setWeekStart] = useState<"mon" | "sun">("mon");
@@ -40,10 +44,12 @@ export function SettingsScreen() {
       <motion.div variants={stagger} initial={entrance} animate="animate" className="flex flex-col gap-7">
         <motion.div variants={fadeUp}>
           <Card className="flex items-center gap-4">
-            <Avatar name="Cobey" color="blue" size={60} />
+            <Avatar name={profile?.name || "Guest"} color="blue" size={60} />
             <div className="min-w-0 flex-1">
-              <div className="text-title3">Cobey</div>
-              <div className="text-subhead text-secondary-label">Sign-in arrives in Phase 3</div>
+              <div className="truncate text-title3">{profile?.name || "Guest"}</div>
+              <div className="truncate text-subhead text-secondary-label">
+                {profile ? profile.email : "Exploring with sample data"}
+              </div>
             </div>
           </Card>
         </motion.div>
@@ -208,8 +214,15 @@ export function SettingsScreen() {
         </motion.div>
 
         <motion.div variants={fadeUp} className="flex flex-col items-center gap-2">
-          <Button variant="danger" size="lg" disabled>
-            Sign out
+          <Button
+            variant={profile ? "danger" : "filled"}
+            size="lg"
+            onClick={() => {
+              clearProfile();
+              router.push("/");
+            }}
+          >
+            {profile ? "Sign out" : "Create an account"}
           </Button>
           <span className="text-caption text-tertiary-label">Auto-Planner 0.2 · preview build</span>
         </motion.div>

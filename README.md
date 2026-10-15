@@ -12,8 +12,9 @@ app for teens and young adults, with a native iOS "liquid glass" feel.
 
 ## Screens
 
-| Tab | What it does |
+| Screen | What it does |
 | --- | --- |
+| **Sign up** (`/`) | Create an account or sign in: validated form (zod), password strength meter, show/hide password, Apple/Google buttons (wired up with real auth in Phase 3), and "Explore with sample data". |
 | **Today** | Progress ring, "Happening now" card, the day as a timeline with free gaps. **+** opens the Add Task sheet, which drops the task into the first free slot. Tap a block for details (complete / delete). |
 | **Week** | Hours planned per day (bar chart), a day picker, and the chosen day as an hour grid. |
 | **Streaks** | Streak and points (they update as you complete blocks), weekly recap ("You hit 82% of your plan"), badges. |
@@ -32,7 +33,7 @@ npm install
 npm run dev
 ```
 
-Open http://localhost:3002 and tap **Open my week**. On Windows PowerShell, use
+Open http://localhost:3002 to see the sign-up screen, or go straight to http://localhost:3002/today. On Windows PowerShell, use
 `npm.cmd` instead of `npm` if scripts are blocked.
 
 ## Checks
@@ -41,8 +42,8 @@ Open http://localhost:3002 and tap **Open my week**. On Windows PowerShell, use
 | --- | --- |
 | `npm run lint` | ESLint |
 | `npm run typecheck` | TypeScript |
-| `npm test` | Vitest unit tests (63) |
-| `npm run test:e2e` | Playwright end-to-end tests in a real browser, light and dark (12) |
+| `npm test` | Vitest unit tests (75) |
+| `npm run test:e2e` | Playwright end-to-end tests in a real browser, light and dark (18) |
 | `npm run check` | Lint, typecheck, unit tests, then a production build |
 
 Before the first `npm run test:e2e` on a new machine, download the test browser
@@ -84,7 +85,7 @@ tests/
 
 1. ✅ Project setup, design system
 2. Database schema + Prisma + RLS
-3. Auth + onboarding
+3. Auth + onboarding (sign-up UI ✅)
 4. Today and Week views with fixed events (UI ✅, real data next)
 5. Tasks + auto-scheduling algorithm + unit tests
 6. Drag-to-reschedule + swipe-to-complete
