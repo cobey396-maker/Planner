@@ -29,3 +29,6 @@ next-env.d.ts
 # playwright
 test-results/
 playwright-report/
+
+# prisma: the client is generated from prisma/schema.prisma (npm install runs it)
+lib/generated/

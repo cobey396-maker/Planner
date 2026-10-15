@@ -3,8 +3,9 @@
 Tell it what you need to do, and it plans your week. A mobile-first schedule
 app for teens and young adults, with a native iOS "liquid glass" feel.
 
-> Status: **Phase 1 complete, plus every screen designed with sample data.**
-> The database, accounts and the real scheduling algorithm come next.
+> Status: **Phases 1–2 complete** (design system; database schema, Prisma and
+> row-level security), plus every screen designed with sample data.
+> Accounts and the real scheduling algorithm come next.
 > What each phase taught is in [LEARNING.md](LEARNING.md).
 
 ![All five tabs and the design system in light mode](docs/screenshots/overview-light.png)
@@ -22,7 +23,7 @@ app for teens and young adults, with a native iOS "liquid glass" feel.
 | **Settings** | Theme, notifications, schedule preferences, and a link to the design system. |
 | **Design system** (`/design`) | Split into Colors & glass, Typography, Components, and States & feedback. |
 
-Everything runs on sample data in the browser for now (see `lib/planner/mock.ts`).
+The screens still use sample data in the browser (`lib/planner/mock.ts`). The database they will use is ready: see [DATABASE.md](DATABASE.md).
 
 ## Run it
 
@@ -42,20 +43,20 @@ Open http://localhost:3002 to see the sign-up screen, or go straight to http://l
 | --- | --- |
 | `npm run lint` | ESLint |
 | `npm run typecheck` | TypeScript |
-| `npm test` | Vitest unit tests (75) |
+| `npm test` | Vitest unit tests, including database security tests against real Postgres (100) |
 | `npm run test:e2e` | Playwright end-to-end tests in a real browser, light and dark (18) |
 | `npm run check` | Lint, typecheck, unit tests, then a production build |
 
 Before the first `npm run test:e2e` on a new machine, download the test browser
 once with `npx playwright install chromium`.
 
-For local environment variables, copy `.env.example` to `.env.local`.
+For local environment variables, copy `.env.example` to `.env.local`. Database setup: [DATABASE.md](DATABASE.md).
 
 ## Stack
 
 Next.js 15 (App Router) · TypeScript · Tailwind CSS v4 · Motion · Vaul ·
-zod · Vitest · Playwright. Coming in later phases: Supabase (Postgres, Auth,
-Realtime), Prisma, dnd-kit, the Claude API, and Capacitor.
+zod · Postgres (Supabase) · Prisma 7 · Vitest · PGlite · Playwright. Coming in
+later phases: Supabase Auth and Realtime, dnd-kit, the Claude API, and Capacitor.
 
 ## Layout
 
@@ -71,20 +72,25 @@ components/
   planner/           Add Task and task-detail sheets
   design/            design-system sub-screens
   ui/                reusable components (glass cards, tab bar, chips, …)
+prisma/
+  schema.prisma      tables and relations
+  migrations/        SQL that runs (generated tables + hand-written RLS)
 lib/
+  db/                Prisma client + run-as-user helpers for RLS
   planner/           types, sample data, client state, free-time math
   design/            tokens, the single `fluid` spring, entrance helper
   time.ts            time formatting and week math
   use-now.ts         the current time, safely (no hydration mismatch)
 tests/
   unit/              Vitest
+  db/                test database harness + Supabase stand-in
   e2e/               Playwright
 ```
 
 ## Roadmap
 
 1. ✅ Project setup, design system
-2. Database schema + Prisma + RLS
+2. ✅ Database schema + Prisma + RLS
 3. Auth + onboarding (sign-up UI ✅)
 4. Today and Week views with fixed events (UI ✅, real data next)
 5. Tasks + auto-scheduling algorithm + unit tests

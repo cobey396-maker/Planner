@@ -1,0 +1,265 @@
+// =============================================================================
+//  AUTO-PLANNER DATABASE SCHEMA
+// =============================================================================
+//
+// Prisma turns this file into (1) SQL that creates the tables and (2) a fully
+// typed TypeScript client. Things Prisma's schema language can't express
+// (row-level security policies, the "no overlapping blocks" constraint,
+// database functions, the link to Supabase's auth.users table) live as
+// hand-written SQL at the end of the migration in prisma/migrations/.
+//
+// Conventions:
+//   - Tables and columns are snake_case in Postgres (@@map / @map) and
+//     camelCase in TypeScript.
+//   - Every user-owned row has user_id. Row-level security (RLS) uses it to
+//     make sure people only ever see their own data.
+//   - Instants are timestamptz (an exact moment, stored in UTC).
+//     Recurring wall-clock times ("gym at 6 PM") are minutes since local
+//     midnight + the user's IANA time zone, so they survive daylight saving.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../lib/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum TaskColor {
+  blue
+  green
+  indigo
+  orange
+  pink
+  purple
+  red
+  teal
+  yellow
+
+  @@map("task_color")
+}
+
+enum Theme {
+  system
+  light
+  dark
+
+  @@map("theme")
+}
+
+enum Priority {
+  low
+  medium
+  high
+
+  @@map("priority")
+}
+
+enum TaskStatus {
+  open
+  done
+  archived
+
+  @@map("task_status")
+}
+
+enum BlockStatus {
+  planned
+  done
+  missed
+  skipped
+
+  @@map("block_status")
+}
+
+enum FriendshipStatus {
+  pending
+  accepted
+
+  @@map("friendship_status")
+}
+
+enum InviteStatus {
+  pending
+  accepted
+  declined
+
+  @@map("invite_status")
+}
+
+/// Public-to-friends identity. One row per Supabase auth user (same id),
+/// created automatically by a trigger when someone signs up.
+model Profile {
+  id          String    @id @db.Uuid
+  displayName String    @map("display_name") @db.VarChar(50)
+  /// Unique @handle: lowercase letters, numbers, underscores (checked in SQL).
+  handle      String    @unique @db.VarChar(20)
+  avatarColor TaskColor @default(blue) @map("avatar_color")
+  /// Secret code in your shareable friend link. Only you can read it.
+  inviteCode  String    @unique @default(dbgenerated("substr(replace((gen_random_uuid())::text, '-'::text, ''::text), 1, 12)")) @map("invite_code") @db.VarChar(12)
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  settings         UserSettings?
+  events           Event[]
+  tasks            Task[]
+  blocks           Block[]
+  points           PointsEntry[]
+  sentRequests     Friendship[]    @relation("requester")
+  receivedRequests Friendship[]    @relation("addressee")
+  sentInvites      HangoutInvite[] @relation("from")
+  receivedInvites  HangoutInvite[] @relation("to")
+
+  @@map("profiles")
+}
+
+/// Private preferences. Unlike profiles, friends can never read these.
+model UserSettings {
+  userId              String   @id @map("user_id") @db.Uuid
+  /// IANA name like "America/Chicago" (validated by a trigger).
+  timeZone            String   @default("UTC") @map("time_zone") @db.VarChar(64)
+  /// ISO weekday the week starts on: 1 = Monday … 7 = Sunday.
+  weekStartsOn        Int      @default(1) @map("week_starts_on") @db.SmallInt
+  /// The planner only places tasks between these local times (minutes).
+  dayStartMinute      Int      @default(420) @map("day_start_minute") @db.SmallInt
+  dayEndMinute        Int      @default(1380) @map("day_end_minute") @db.SmallInt
+  theme               Theme    @default(system)
+  notifyUpcoming      Boolean  @default(true) @map("notify_upcoming")
+  notifyMissed        Boolean  @default(true) @map("notify_missed")
+  notifyFriends       Boolean  @default(true) @map("notify_friends")
+  notifyRecap         Boolean  @default(false) @map("notify_recap")
+  reminderLeadMinutes Int      @default(15) @map("reminder_lead_minutes") @db.SmallInt
+  updatedAt           DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  profile Profile @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("user_settings")
+}
+
+/// A FIXED commitment the planner works around: class, work, practice.
+/// One-off events have empty `weekdays` and startDate = endDate.
+/// Recurring events repeat on the ISO weekdays listed, from startDate until
+/// endDate (or forever when endDate is null).
+model Event {
+  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId      String    @map("user_id") @db.Uuid
+  title       String    @db.VarChar(80)
+  color       TaskColor @default(blue)
+  startDate   DateTime  @map("start_date") @db.Date
+  endDate     DateTime? @map("end_date") @db.Date
+  /// ISO weekdays (1 = Mon … 7 = Sun). Empty = happens once, on startDate.
+  weekdays    Int[]     @default([]) @db.SmallInt
+  /// Local wall-clock time in the owner's time zone, minutes since midnight.
+  startMinute Int       @map("start_minute") @db.SmallInt
+  endMinute   Int       @map("end_minute") @db.SmallInt
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  user Profile @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("events")
+}
+
+/// Something you need to do. The auto-planner (Phase 5) splits it into
+/// Blocks and places them in your free time before the due date.
+model Task {
+  id                String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId            String     @map("user_id") @db.Uuid
+  title             String     @db.VarChar(80)
+  notes             String?    @db.VarChar(1000)
+  color             TaskColor  @default(orange)
+  priority          Priority   @default(medium)
+  status            TaskStatus @default(open)
+  dueAt             DateTime?  @map("due_at") @db.Timestamptz(6)
+  estimatedMinutes  Int        @map("estimated_minutes") @db.SmallInt
+  /// Shortest work session worth scheduling (the planner won't make a 5-min block).
+  minSessionMinutes Int        @default(30) @map("min_session_minutes") @db.SmallInt
+  completedAt       DateTime?  @map("completed_at") @db.Timestamptz(6)
+  createdAt         DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime   @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  user   Profile @relation(fields: [userId], references: [id], onDelete: Cascade)
+  blocks Block[]
+
+  @@index([userId, status, dueAt])
+  @@map("tasks")
+}
+
+/// A scheduled work session for a task: what you see on Today and Week.
+model Block {
+  id          String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId      String      @map("user_id") @db.Uuid
+  taskId      String      @map("task_id") @db.Uuid
+  startsAt    DateTime    @map("starts_at") @db.Timestamptz(6)
+  endsAt      DateTime    @map("ends_at") @db.Timestamptz(6)
+  status      BlockStatus @default(planned)
+  /// The user dragged it here: the planner must not move it (Phase 6).
+  pinned      Boolean     @default(false)
+  completedAt DateTime?   @map("completed_at") @db.Timestamptz(6)
+  createdAt   DateTime    @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  user   Profile       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  task   Task          @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  points PointsEntry[]
+
+  @@index([userId, startsAt])
+  @@index([taskId])
+  @@map("blocks")
+}
+
+/// Append-only points history. Streaks and totals are computed from it.
+/// Users can READ their own rows but never write them directly: points are
+/// awarded only by the complete_block() database function, so they can't be faked.
+model PointsEntry {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  /// One award per block, enforced by the unique index.
+  blockId   String?  @unique @map("block_id") @db.Uuid
+  points    Int      @db.SmallInt
+  reason    String   @db.VarChar(40)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  user  Profile @relation(fields: [userId], references: [id], onDelete: Cascade)
+  block Block?  @relation(fields: [blockId], references: [id], onDelete: SetNull)
+
+  @@index([userId, createdAt])
+  @@map("points_ledger")
+}
+
+/// A friend request, then a friendship once accepted. One row per pair.
+model Friendship {
+  id          String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  requesterId String           @map("requester_id") @db.Uuid
+  addresseeId String           @map("addressee_id") @db.Uuid
+  status      FriendshipStatus @default(pending)
+  createdAt   DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  acceptedAt  DateTime?        @map("accepted_at") @db.Timestamptz(6)
+
+  requester Profile @relation("requester", fields: [requesterId], references: [id], onDelete: Cascade)
+  addressee Profile @relation("addressee", fields: [addresseeId], references: [id], onDelete: Cascade)
+
+  @@index([addresseeId])
+  @@map("friendships")
+}
+
+/// "Hang out Thursday 5–6:30?" sent from a shared free slot.
+model HangoutInvite {
+  id          String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  fromUserId  String       @map("from_user_id") @db.Uuid
+  toUserId    String       @map("to_user_id") @db.Uuid
+  startsAt    DateTime     @map("starts_at") @db.Timestamptz(6)
+  endsAt      DateTime     @map("ends_at") @db.Timestamptz(6)
+  activity    String       @db.VarChar(40)
+  message     String?      @db.VarChar(200)
+  status      InviteStatus @default(pending)
+  createdAt   DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+  respondedAt DateTime?    @map("responded_at") @db.Timestamptz(6)
+
+  from Profile @relation("from", fields: [fromUserId], references: [id], onDelete: Cascade)
+  to   Profile @relation("to", fields: [toUserId], references: [id], onDelete: Cascade)
+
+  @@index([toUserId, status])
+  @@index([fromUserId])
+  @@map("hangout_invites")
+}

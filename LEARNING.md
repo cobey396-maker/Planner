@@ -307,3 +307,94 @@ Key concepts:
   managers offer to generate or fill passwords.
 - **Never store passwords client-side.** Until Phase 3 only the name and email
   are remembered locally so Settings can greet you; sign out clears them.
+
+---
+
+## Phase 2: Database schema, Prisma, and row-level security
+
+### What we built, in plain English
+
+The app needs somewhere to keep your tasks, schedule, points and friends that
+survives a refresh, and it must be impossible for one person to see
+another's data. We designed the tables in `prisma/schema.prisma`, generated
+the SQL with Prisma, and hand-wrote the security layer: Postgres row-level
+security (RLS) policies, constraints, triggers and a few database functions.
+Everything is tested against real Postgres running inside the test process
+(PGlite), so `npm test` proves the security rules on any laptop.
+
+Full details and setup steps: [DATABASE.md](DATABASE.md).
+
+### Key concepts
+
+**1. Row-level security (RLS).** With Supabase, the browser talks to the
+database through Supabase's API, carrying the user's login token. RLS is a
+Postgres feature that filters every query by a policy like
+`user_id = auth.uid()`. It's "deny by default": a table with RLS on and no
+policy returns nothing. The security lives in the database, so a bug in our
+API code (or someone calling the API directly) can't bypass it.
+
+**2. Defense in depth with Prisma.** Prisma connects as the table OWNER, and
+owners skip RLS. So `prismaForUser()` wraps each query in a transaction that
+sets the user's JWT claims and does `SET LOCAL ROLE authenticated`. A test
+proves a `findMany()` with no `where` still only returns your rows.
+
+**3. Privileges vs policies.** GRANTs decide *which operations and columns*
+a role may touch at all; policies decide *which rows*. We use both:
+`points_ledger` is GRANT SELECT only (nobody can insert fake points), and
+`hangout_invites` grants UPDATE only on `status` and `responded_at`, so the
+recipient can answer an invite but not rewrite it.
+
+**4. SECURITY DEFINER functions, carefully.** Some actions need more power
+than the user has (looking up a profile by invite code, awarding points).
+Those run as the function's owner, so each one checks `auth.uid()` itself,
+sets `search_path = ''` (so nobody can hijack it with look-alike tables), and
+EXECUTE is revoked from `public` and `anon`.
+
+**5. Constraints the database enforces.** The planner must never double-book
+you: an *exclusion constraint* with a GiST index rejects any two blocks of the
+same user whose time ranges overlap (`[)` ranges, so 9–10 and 10–11 may
+touch). Every rule the database enforces is a bug the app can't introduce.
+
+**6. Time zones and daylight saving.** Exact moments (blocks, due dates) are
+`timestamptz`. Recurring events are stored as local wall-clock minutes plus
+the user's IANA zone, and expanded per day with `AT TIME ZONE`, so "gym at
+6 PM" is still 6 PM after the clocks change. A test checks the Nov 1 2026
+switch: 23:00Z before, 00:00Z after.
+
+**7. Privacy by construction.** Friends never get read access to events or
+tasks. `friend_busy_intervals()` returns only `(starts_at, ends_at)`, and only
+for accepted friends. Helper functions also refuse to answer "are X and Y
+friends?" unless you are X or Y.
+
+**8. Testing security by trying to break it.** The tests act as attackers:
+read someone else's tasks, attach a block to their task, insert 1000 points,
+answer an invite you sent. I also deliberately weakened two policies and
+confirmed the tests failed. A test suite that can't fail proves nothing.
+
+### Interview questions
+
+**Q1. How do you make sure users can only access their own data?**
+Postgres row-level security on every table, with policies comparing
+`user_id` to `auth.uid()`, the user id from their verified login token. RLS
+is deny-by-default, and it's enforced by the database, so it holds even if
+the API code has a bug or someone calls Supabase directly. Because Prisma
+connects as the table owner, which bypasses RLS, I wrap user queries so they
+run as the `authenticated` role with the user's claims. Tests sign in as
+different users and confirm cross-user reads return nothing and cross-user
+writes are rejected.
+
+**Q2. How do you prevent double-booking at the database level?**
+An exclusion constraint: `EXCLUDE USING gist (user_id WITH =,
+tstzrange(starts_at, ends_at, '[)') WITH &&)`. It needs the btree_gist
+extension so one index can combine equality on the user with overlap on the
+time range. Postgres checks it atomically on every insert and update, so even
+two concurrent requests can't both succeed, which an app-level "check then
+insert" could not guarantee.
+
+**Q3. How do you handle recurring events across daylight saving time?**
+I store recurring events as local wall-clock times (minutes since midnight)
+plus the owner's IANA time zone, not as UTC instants. To find occurrences, I
+generate each local date in the range and convert `date + time` with `AT TIME
+ZONE 'America/Chicago'`, which applies the right UTC offset for that specific
+date. So a 6 PM class is 23:00 UTC in October and 00:00 UTC the next day in
+November, and a unit test checks exactly that.

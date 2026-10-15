@@ -11,34 +11,47 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "check": "npm run lint && npm run typecheck && npm test && npm run build",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "postinstall": "prisma generate",
+    "db:generate": "prisma generate",
+    "db:migrate": "prisma migrate deploy",
+    "db:status": "prisma migrate status",
+    "db:studio": "prisma studio"
   },
   "engines": {
     "node": ">=22.6"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.5.10",
     "@eslint/eslintrc": "^3.3.7",
     "@playwright/test": "^1.64.1",
     "@tailwindcss/postcss": "^4.3.3",
     "@testing-library/react": "^16.3.3",
     "@types/node": "^22.20.5",
+    "@types/pg": "^8.23.1",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.1.2",
     "eslint": "^9.39.5",
     "eslint-config-next": "^15.5.28",
     "jsdom": "^29.1.1",
+    "pglite-prisma-adapter": "^0.7.2",
+    "prisma": "^7.10.0",
     "tailwindcss": "^4.3.3",
     "typescript": "^5.9.3",
     "vitest": "^5.0.4"
   },
   "dependencies": {
+    "@prisma/adapter-pg": "^7.10.0",
+    "@prisma/client": "^7.10.0",
     "clsx": "^2.1.1",
     "lucide-react": "^1.57.0",
     "motion": "^14.2.0",
     "next": "^15.5.28",
+    "pg": "^8.23.1",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
+    "server-only": "^0.0.1",
     "tailwind-merge": "^3.7.0",
     "vaul": "^1.1.2",
     "zod": "^4.6.7"
