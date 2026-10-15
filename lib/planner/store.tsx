@@ -1,6 +1,7 @@
 "use client";
 
 import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from "react";
+import { fireConfetti } from "@/lib/confetti";
 import type { TaskColor } from "@/lib/design/tokens";
 import { firstFit } from "./free-time";
 import { MOCK_FRIENDS, MOCK_REQUESTS, mockBlocks } from "./mock";
@@ -46,15 +47,22 @@ export function PlannerProvider({ children }: { children: ReactNode }) {
   const [friends, setFriends] = useState<Friend[]>(MOCK_FRIENDS);
   const [requests, setRequests] = useState<FriendRequest[]>(MOCK_REQUESTS);
 
-  const toggleComplete = useCallback((id: string) => {
-    setCompleted((prev) => {
-      // Never mutate state: copy the Set, change the copy, return it.
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  }, []);
+  const toggleComplete = useCallback(
+    (id: string) => {
+      // Celebrate only on the not-done → done transition, never on un-checking.
+      // This lives OUTSIDE the setState updater below: React may run updaters
+      // twice in development (Strict Mode), and side effects in them would too.
+      if (!completed.has(id)) fireConfetti();
+      setCompleted((prev) => {
+        // Never mutate state: copy the Set, change the copy, return it.
+        const next = new Set(prev);
+        if (next.has(id)) next.delete(id);
+        else next.add(id);
+        return next;
+      });
+    },
+    [completed],
+  );
 
   const removeBlock = useCallback((id: string) => {
     setBlocks((prev) => prev.filter((b) => b.id !== id));

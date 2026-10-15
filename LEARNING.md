@@ -251,3 +251,27 @@ first client render both show a skeleton, then the client fills in real
 times. I also learned that invalid HTML nesting (a div inside a p) causes
 hydration errors too, because the browser rewrites the DOM before React
 hydrates it.
+
+---
+
+## Add-on: confetti when a task is completed
+
+`lib/confetti.ts` draws celebration confetti on one shared full-screen
+`<canvas>` with zero dependencies. Each particle has a velocity; every
+animation frame adds gravity (`vy += 0.35`), applies air drag (`vx *= 0.98`),
+spins and fades it, and the `requestAnimationFrame` loop stops itself once all
+particles are invisible. The canvas is sized by `devicePixelRatio` so it stays
+crisp on retina screens, and has `pointer-events: none` so it never blocks taps.
+
+It's called from **one place**: `toggleComplete` in `lib/planner/store.tsx`,
+the single path every completion goes through. Two details worth explaining
+in an interview:
+
+- **Only on the transition to done.** We check `!completed.has(id)` first, so
+  un-checking a task never celebrates.
+- **Side effects stay out of state updaters.** The confetti call sits outside
+  the `setCompleted(prev => ...)` updater, because React may run updaters twice
+  in development (Strict Mode) and the confetti would fire twice.
+- **Reduce Motion is respected.** If the OS setting is on, no confetti (the
+  "+10 points" toast still confirms the action). A unit test and an e2e test
+  cover both cases.

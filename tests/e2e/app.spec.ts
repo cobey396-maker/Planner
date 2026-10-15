@@ -48,6 +48,8 @@ test("adding a task places it in the first free gap and completing it earns poin
   await block.click();
   await page.getByRole("button", { name: "Mark complete" }).click();
   await expect(page.getByText("1 of 6 done")).toBeVisible();
+  // Confetti canvas appears over the app and never blocks taps.
+  await expect(page.locator("#confetti-canvas")).toHaveCSS("pointer-events", "none");
 
   // State is shared across tabs: the completion shows up on Streaks.
   await page.getByRole("link", { name: "Streaks" }).click();
@@ -67,6 +69,15 @@ test("Friends shows shared free time without event details and sends an invite",
 
   await page.getByRole("button", { name: "Accept Alex Kim" }).click();
   await expect(page.getByRole("button", { name: "Alex", exact: true })).toBeVisible();
+});
+
+test("no confetti for people who turn on Reduce Motion", async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await openAt(page, "/today");
+  await page.getByRole("button", { name: /AP Chem/ }).click();
+  await page.getByRole("button", { name: "Mark complete" }).click();
+  await expect(page.getByText("1 of 5 done")).toBeVisible();
+  await expect(page.locator("#confetti-canvas")).toHaveCount(0);
 });
 
 test("the theme switch in Settings flips the whole app", async ({ page }) => {
