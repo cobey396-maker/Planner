@@ -19,11 +19,14 @@ import {
   POINTS_PER_BLOCK,
   PURPLE_FLAME_STREAK,
   weekRecap,
+  type BadgeCategory,
 } from "@/lib/planner/stats";
 import { usePlanner } from "@/lib/planner/store";
 import { formatDayKey } from "@/lib/time";
 import { addDays, dayKey, startOfWeek } from "@/lib/tz";
 import { useNow } from "@/lib/use-now";
+
+const CATEGORIES: BadgeCategory[] = ["Getting started", "Streaks", "Big days", "Time of day", "Habits", "Friends"];
 
 /**
  * STREAKS: everything here is computed from your real completed blocks
@@ -33,7 +36,7 @@ import { useNow } from "@/lib/use-now";
 export function StreaksScreen() {
   const entrance = useEntrance();
   const now = useNow();
-  const { blocks, pointsTotal, timeZone, weekStartsOn, hasAcceptedHangout } = usePlanner();
+  const { blocks, pointsTotal, timeZone, weekStartsOn, hasAcceptedHangout, friends } = usePlanner();
 
   if (!now) {
     return (
@@ -55,7 +58,7 @@ export function StreaksScreen() {
   const thisWeek = startOfWeek(today, weekStartsOn);
   const recap = weekRecap(blocks, thisWeek, timeZone, nowMs);
   const lastWeek = weekRecap(blocks, addDays(thisWeek, -7), timeZone, nowMs);
-  const earned = earnedBadges(blocks, timeZone, weekStartsOn, hasAcceptedHangout);
+  const earned = earnedBadges(blocks, { timeZone, weekStartsOn, hasAcceptedHangout, friendsCount: friends.length, now: nowMs });
   const pct = (r: number | null) => (r === null ? "–" : `${Math.round(r * 100)}%`);
 
   return (
@@ -127,32 +130,44 @@ export function StreaksScreen() {
         </motion.section>
 
         <motion.section variants={fadeUp}>
-          <SectionHeader>Badges</SectionHeader>
-          <div className="grid grid-cols-3 gap-3">
-            {BADGES.map((b) => {
-              const has = earned.has(b.id);
-              return (
-                <motion.div
-                  key={b.id}
-                  data-testid={`badge-${b.id}`}
-                  data-earned={has}
-                  whileTap={{ scale: 0.95 }}
-                  transition={fluid}
-                  className={cn(
-                    "glass-card relative flex flex-col items-center rounded-card px-2 py-4 text-center",
-                    !has && "opacity-50 grayscale",
-                  )}
-                >
-                  {!has && <Lock aria-hidden size={14} className="absolute right-2.5 top-2.5 text-secondary-label" />}
-                  <span aria-hidden className="text-3xl">
-                    {b.emoji}
-                  </span>
-                  <span className="mt-1.5 text-footnote font-semibold">{b.name}</span>
-                  <span className="mt-0.5 text-caption text-secondary-label">{b.detail}</span>
-                  <span className="sr-only">{has ? "Earned" : "Locked"}</span>
-                </motion.div>
-              );
-            })}
+          <SectionHeader>
+            Badges{" "}
+            <span className="font-normal text-secondary-label" data-testid="badge-count">
+              {earned.size} of {BADGES.length}
+            </span>
+          </SectionHeader>
+          <div className="flex flex-col gap-5">
+            {CATEGORIES.map((category) => (
+              <div key={category}>
+                <h3 className="mb-2 px-1 text-footnote font-semibold uppercase tracking-wide text-secondary-label">{category}</h3>
+                <div className="grid grid-cols-3 gap-3">
+                  {BADGES.filter((b) => b.category === category).map((b) => {
+                    const has = earned.has(b.id);
+                    return (
+                      <motion.div
+                        key={b.id}
+                        data-testid={`badge-${b.id}`}
+                        data-earned={has}
+                        whileTap={{ scale: 0.95 }}
+                        transition={fluid}
+                        className={cn(
+                          "glass-card relative flex flex-col items-center rounded-card px-2 py-4 text-center",
+                          !has && "opacity-50 grayscale",
+                        )}
+                      >
+                        {!has && <Lock aria-hidden size={14} className="absolute right-2.5 top-2.5 text-secondary-label" />}
+                        <span aria-hidden className="text-3xl">
+                          {b.emoji}
+                        </span>
+                        <span className="mt-1.5 text-footnote font-semibold">{b.name}</span>
+                        <span className="mt-0.5 text-caption text-secondary-label">{b.detail}</span>
+                        <span className="sr-only">{has ? "Earned" : "Locked"}</span>
+                      </motion.div>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
           </div>
         </motion.section>
       </motion.div>

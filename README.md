@@ -18,9 +18,10 @@ app for teens and young adults, with a native iOS "liquid glass" feel.
 | **Sign up** (`/`) | Create an account or sign in with Supabase Auth: validated on client and server (zod), password strength meter, email confirmation, password reset, and "Explore with sample data". Apple/Google buttons are placeholders. |
 | **Onboarding** (`/onboarding`) | Name, optional profile photo (initials if skipped), time zone (auto-detected), optional city and state, then confetti. Planning is 24/7, so there are no hours to pick. |
 | **Today** | Only your own tasks for today. Empty day: "No tasks for today 😊". Otherwise a progress ring, "Happening now", and a timeline with free gaps. **+** adds a task (auto-placed in the first open time, or at a time you pick). Tap a block to complete or delete it. |
-| **Week** | **+** to add tasks, week navigation, hours planned per day (computed the same way as the grid, so they always match), and a 24-hour day grid with a "now" line. |
-| **Streaks** | Starts at 0 streak / 0 points. 10 points per finished block, purple flame at a 10+ day streak, weekly recap from your real blocks, and badges that start locked and unlock by rule. |
+| **Week** | **+** to add tasks (one day, any date up to a year out, several picked days, or repeating: every day, weekdays, weekly or chosen weekdays), week navigation, hours planned per day (computed the same way as the grid, so they always match), and a 24-hour day grid with a "now" line. |
+| **Streaks** | Starts at 0 streak / 0 points. 10 points per finished block, purple flame at a 10+ day streak, weekly recap from your real blocks, and 31 badges in six groups that start locked and unlock by rule. |
 | **Friends** | No starter friends. Requests, hangout invites, your invite link, **free time together** (busy/free only, never event names), and "People you may know": friends of friends, then people in your city. |
+| **Schedule Helper** (`/helper`) | Chat with Claude to plan: "gym at 5 every Monday, Thursday and Friday", "find 2 hours to study tomorrow", "move my next task to Friday". It uses the same rules as the buttons and can only touch your own schedule. Needs an account and `ANTHROPIC_API_KEY`; it will be a paid feature later (`lib/plans.ts`). |
 | **Settings** | Edit profile (photo, name, city/state), theme, **email** notifications, week start, time zone, "Suggest me to others", sign out. |
 | **Design system** (`/design`) | Split into Colors & glass, Typography, Components, and States & feedback. |
 

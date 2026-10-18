@@ -25,6 +25,8 @@ export type PlannerData = {
   inviteCode: string | null;
   hangouts: HangoutInvite[];
   hasAcceptedHangout: boolean;
+  /** The database is missing a migration: tell the user how to update it. */
+  databaseOutdated: boolean;
 };
 
 /** Blocks from this far back are enough for streaks, badges and recaps. */
@@ -54,7 +56,10 @@ export function toPerson(row: ProfileRow): PersonSummary {
   };
 }
 
-export async function loadPlannerData(supabase: ServerSupabase, userId: string): Promise<PlannerData> {
+/** Postgres error codes that mean "this table/column/function doesn't exist yet". */
+const MISSING_OBJECT = new Set(["42703", "42P01", "42883", "PGRST202", "PGRST204"]);
+
+export async function loadPlannerData(supabase: ServerSupabase, userId: string, repaired = false): Promise<PlannerData> {
   const since = new Date(Date.now() - HISTORY_DAYS * 86_400_000).toISOString();
 
   const [settings, profile, blocks, points, friendships, suggestions, invite, hangouts] = await Promise.all([
@@ -75,6 +80,17 @@ export async function loadPlannerData(supabase: ServerSupabase, userId: string):
     supabase.rpc("my_invite_code"),
     supabase.from("hangout_invites").select("id, from_user_id, to_user_id, starts_at, ends_at, activity, status"),
   ]);
+
+  // An account without its profile row can't save anything (tasks need it).
+  // Ask the database to recreate the missing rows, then load again, once.
+  let repairUnavailable = false;
+  if (!profile.data && profile.error?.code === "PGRST116" && !repaired) {
+    const { error } = await supabase.rpc("ensure_my_account");
+    if (!error) return loadPlannerData(supabase, userId, true);
+    repairUnavailable = MISSING_OBJECT.has(error.code ?? "");
+  }
+  const databaseOutdated =
+    repairUnavailable || [settings, profile, suggestions].some((r) => r.error && MISSING_OBJECT.has(r.error.code ?? ""));
 
   // People connected to me: fetch their public profile fields in one query.
   const rows = (friendships.data ?? []) as { id: string; requester_id: string; addressee_id: string; status: string }[];
@@ -159,5 +175,6 @@ export async function loadPlannerData(supabase: ServerSupabase, userId: string):
         activity: h.activity,
       })),
     hasAcceptedHangout: hangoutRows.some((h) => h.status === "accepted"),
+    databaseOutdated,
   };
 }

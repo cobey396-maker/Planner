@@ -554,3 +554,66 @@ fixed, minimal set of columns (name, handle, photo, city, mutual count) for
 people who opted in, excluding you and anyone you're already connected to.
 Clients can't query other users' profiles directly; RLS blocks that. The
 function is the only, narrow door.
+
+## Update: Schedule Helper (AI), repeating tasks, 31 badges, and a saving bug
+
+**In plain English:** you can now talk to the planner ("gym at 5 every
+Monday, Thursday and Friday") and it does it; tasks can repeat or go on many
+days at once, up to a year ahead; there are 25 new badges; and we fixed a
+bug where some accounts couldn't save tasks at all.
+
+### The bug: "I press Plan it and nothing shows up"
+Tasks belong to a profile (a foreign key). An account created *before* the
+sign-up trigger existed never got its profile row, so every task insert was
+rejected by the database, and the only sign was a small red message at the
+bottom of a long sheet. How we found it: a local copy of the real stack
+(Postgres + PostgREST + a fake auth server) reproduced it exactly. The fix
+has three layers: migration 3 repairs existing accounts; the app calls
+`ensure_my_account()` if it ever finds the rows missing; and errors now also
+show as a toast. Lesson: never let a write fail quietly, and test against
+the real stack, not just mocks.
+
+### Repeating tasks
+A repeating task is ONE task with one block per occurrence. Each occurrence
+can be finished, moved or deleted on its own ("This one" / "All 6"), and
+streaks and badges need no special cases. `expandRepeat()` turns a rule into
+dates; `placeMany()` places the task on each date and *skips* days that are
+full instead of failing the whole request.
+
+### The Schedule Helper (tool use)
+Claude can't touch the database directly. We give it six **tools**
+(`get_schedule`, `find_free_time`, `add_task`, `move_block`, `set_done`,
+`delete`), each a zod schema plus a function. The SDK's **tool runner** loops:
+Claude asks for a tool → we validate the input and run it with the user's own
+token (so row-level security still applies) → we send back the result →
+Claude continues, until it answers. The reply **streams** to the browser as
+newline-delimited JSON, and when anything changed we send the fresh schedule
+so every tab updates. The API key stays on the server.
+
+**Key concepts:** foreign keys and silent failures, reproducing bugs on the
+real stack, modeling recurrence as data, LLM tool use (function calling),
+streaming responses, keeping secrets server-side, feature flags for a future
+paywall.
+
+**Interview questions**
+
+**Q1. How do you let an LLM change user data safely?**
+Expose a small set of narrow tools instead of raw database access, validate
+every tool input with a schema, run tools with the end user's own
+permissions (here, Postgres row-level security), reuse the same business
+logic as the UI, cap iterations and request rates, and keep the API key on
+the server. The model proposes; your code decides.
+
+**Q2. How would you store recurring events?**
+Two options: store the rule (like an iCal RRULE) and expand it when reading,
+or expand it into rows when creating. I expanded into rows (one block per
+occurrence, capped at 120, up to a year ahead) because each occurrence needs
+its own state (done, moved, deleted) and stats become simple queries. The
+trade-off: "edit all future occurrences" means updating many rows.
+
+**Q3. A user says "the button does nothing." How do you debug it?**
+Reproduce it in an environment as close to theirs as possible, watch the
+network/server logs for the failing request, and read the actual error (here
+a foreign-key violation). Then fix the root cause, repair existing bad data,
+add a self-healing path, make the error visible, and add a test that fails
+without the fix.

@@ -3,6 +3,7 @@
 import { createContext, useCallback, useContext, useMemo, useState, useSyncExternalStore, type ReactNode } from "react";
 import {
   createTaskAction,
+  deleteBlockAction,
   deleteTaskAction,
   friendBusyAction,
   requestFriendAction,
@@ -15,7 +16,7 @@ import {
 import { saveSettingsAction } from "@/app/actions/profile";
 import { fireConfetti } from "@/lib/confetti";
 import { dayRange } from "@/lib/tz";
-import { placeTask } from "./placement";
+import { placeMany, type SkippedDay } from "./placement";
 import { POINTS_PER_BLOCK } from "./stats";
 import type { FriendRequest, HangoutInvite, Interval, PersonSummary, PlannedBlock, Suggestion } from "./types";
 
@@ -88,7 +89,12 @@ type PlannerValue = {
   inviteCode: string | null;
   hangouts: HangoutInvite[];
   hasAcceptedHangout: boolean;
-  addTask: (input: NewTaskInput) => Promise<Result<{ block: PlannedBlock }>>;
+  /** One task on one or more days. Days that don't fit come back in `skipped`. */
+  addTask: (input: NewTaskInput) => Promise<Result<{ blocks: PlannedBlock[]; skipped: SkippedDay[] }>>;
+  /** Delete one occurrence (deleteTask removes the whole series). */
+  deleteBlock: (blockId: string) => Promise<Result>;
+  /** Replace all blocks with fresh ones from the server (after the Schedule Helper edits). */
+  replaceBlocks: (blocks: PlannedBlock[]) => void;
   setDone: (blockId: string, done: boolean) => Promise<Result>;
   deleteTask: (taskId: string) => Promise<Result>;
   setWeekStartsOn: (value: 1 | 7) => Promise<void>;
@@ -149,36 +155,53 @@ export function PlannerProvider({ initial, mode, children }: { initial: InitialP
   );
 
   const addTask = useCallback(
-    async (input: NewTaskInput): Promise<Result<{ block: PlannedBlock }>> => {
+    async (input: NewTaskInput): Promise<Result<{ blocks: PlannedBlock[]; skipped: SkippedDay[] }>> => {
+      const add = (added: PlannedBlock[]) => setBlocks((prev) => [...prev, ...added].sort((a, b) => a.startsAt - b.startsAt));
       if (mode === "remote") {
         const result = await safely(() => createTaskAction(input));
-        if (result.ok) setBlocks((prev) => [...prev, result.block].sort((a, b) => a.startsAt - b.startsAt));
+        if (result.ok) add(result.blocks);
         return result;
       }
       // Demo mode: the same placement rules, run in the browser.
       const title = input.title.trim();
       if (!title) return { ok: false, error: "Give your task a name" };
-      const range = dayRange(input.dayKey, timeZone);
+      const days = [...input.dayKeys].sort();
+      const range = { start: dayRange(days[0], timeZone).start, end: dayRange(days.at(-1)!, timeZone).end };
       const busy = blocks
         .filter((b) => b.startsAt < range.end && b.endsAt > range.start && b.status !== "skipped")
         .map((b) => ({ start: b.startsAt, end: b.endsAt }));
-      const slot = placeTask({ ...input, timeZone, now: Date.now(), busy });
-      if (!slot.ok) return slot;
-      const block: PlannedBlock = {
+      const { placed, skipped } = placeMany({ ...input, dayKeys: days, timeZone, now: Date.now(), busy });
+      if (placed.length === 0) return { ok: false, error: skipped[0]?.error ?? "No open time on those days." };
+      const taskId = crypto.randomUUID();
+      const added: PlannedBlock[] = placed.map((p) => ({
         id: crypto.randomUUID(),
-        taskId: crypto.randomUUID(),
+        taskId,
         title,
         color: input.color,
-        startsAt: slot.startsAt,
-        endsAt: slot.endsAt,
+        startsAt: p.startsAt,
+        endsAt: p.endsAt,
         status: "planned",
         completedAt: null,
-      };
-      setBlocks((prev) => [...prev, block].sort((a, b) => a.startsAt - b.startsAt));
-      return { ok: true, block };
+      }));
+      add(added);
+      return { ok: true, blocks: added, skipped };
     },
     [mode, blocks, timeZone],
   );
+
+  const deleteBlock = useCallback(
+    async (blockId: string): Promise<Result> => {
+      const removed = blocks.filter((b) => b.id === blockId);
+      setBlocks((prev) => prev.filter((b) => b.id !== blockId));
+      if (mode === "local") return { ok: true };
+      const result = await safely(() => deleteBlockAction(blockId));
+      if (!result.ok) setBlocks((prev) => [...prev, ...removed].sort((a, b) => a.startsAt - b.startsAt));
+      return result;
+    },
+    [mode, blocks],
+  );
+
+  const replaceBlocks = useCallback((next: PlannedBlock[]) => setBlocks([...next].sort((a, b) => a.startsAt - b.startsAt)), []);
 
   const setDone = useCallback(
     async (blockId: string, done: boolean): Promise<Result> => {
@@ -293,6 +316,8 @@ export function PlannerProvider({ initial, mode, children }: { initial: InitialP
       hangouts,
       hasAcceptedHangout,
       addTask,
+      deleteBlock,
+      replaceBlocks,
       setDone,
       deleteTask,
       setWeekStartsOn,
@@ -307,7 +332,7 @@ export function PlannerProvider({ initial, mode, children }: { initial: InitialP
     }),
     [
       mode, timeZone, weekStartsOn, profile, blocks, pointsTotal, friends, requests, suggestions, initial.inviteCode,
-      hangouts, hasAcceptedHangout, addTask, setDone, deleteTask, setWeekStartsOn, respondRequest, requestFriend,
+      hangouts, hasAcceptedHangout, addTask, deleteBlock, replaceBlocks, setDone, deleteTask, setWeekStartsOn, respondRequest, requestFriend,
       friendBusy, sendHangout, respondHangout, prefs, setPrefs,
     ],
   );

@@ -3,9 +3,9 @@
 import { Bell, CalendarClock, Eye, FileText, Globe, Mail, MapPin, Moon, Palette, Pencil, Shield, Users } from "lucide-react";
 import { motion } from "motion/react";
 import Link from "next/link";
-import { useState } from "react";
+import { useState, useSyncExternalStore } from "react";
 import { signOutAction } from "@/app/actions/auth";
-import { removeAvatarAction, updateProfileAction, uploadAvatarAction } from "@/app/actions/profile";
+import { removeAvatarAction, saveSettingsAction, updateProfileAction, uploadAvatarAction } from "@/app/actions/profile";
 import { PlaceFields } from "@/components/planner/place-fields";
 import { useTheme } from "@/components/providers";
 import { Avatar } from "@/components/ui/avatar";
@@ -27,6 +27,17 @@ import type { ThemePreference } from "@/lib/theme";
 
 const LEAD_TIMES = [5, 10, 15, 30];
 
+/** Every time zone this browser knows. Browser-only (null on the server), so
+ * the server and browser HTML always match even if their lists differ. */
+let zoneList: string[] | null = null;
+function useTimeZoneList(): string[] | null {
+  return useSyncExternalStore(
+    () => () => {},
+    () => (zoneList ??= Intl.supportedValuesOf("timeZone")),
+    () => null,
+  );
+}
+
 /**
  * SETTINGS: profile (photo, name, city), appearance, email notifications and
  * privacy. Planning is 24/7, so there are no "planning hours" to set.
@@ -39,6 +50,7 @@ export function SettingsScreen() {
   const account = useAccount();
   const localProfile = useProfile();
   const { mode, profile, prefs, setPrefs, weekStartsOn, setWeekStartsOn, timeZone } = usePlanner();
+  const zones = useTimeZoneList();
   const [editing, setEditing] = useState(false);
   // Bumped on each open so the edit form starts from the saved profile.
   const [editKey, setEditKey] = useState(0);
@@ -197,7 +209,29 @@ export function SettingsScreen() {
                 </RowIcon>
               }
               title="Time zone"
-              trailing={<span className="max-w-44 truncate text-secondary-label">{timeZone.replaceAll("_", " ")}</span>}
+              trailing={
+                mode === "remote" && zones ? (
+                  <select
+                    aria-label="Time zone"
+                    value={timeZone}
+                    onChange={async (e) => {
+                      const res = await saveSettingsAction({ timeZone: e.target.value }).catch(() => ({ ok: false as const }));
+                      // Times everywhere are shown in this zone, so reload with it.
+                      if (res.ok) window.location.reload();
+                      else toast("Couldn't change the time zone.");
+                    }}
+                    className="max-w-44 truncate bg-transparent text-right text-secondary-label outline-none"
+                  >
+                    {[timeZone, ...zones.filter((z) => z !== timeZone)].map((z) => (
+                      <option key={z} value={z}>
+                        {z.replaceAll("_", " ")}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <span className="max-w-44 truncate text-secondary-label">{timeZone.replaceAll("_", " ")}</span>
+                )
+              }
             />
           </ListGroup>
         </motion.div>

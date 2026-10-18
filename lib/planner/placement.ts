@@ -52,3 +52,35 @@ export function placeTask(req: PlacementRequest): PlacementResult {
   if (!slot) return { ok: false, error: "No open time left that day. Try another day or a shorter task." };
   return { ok: true, startsAt: dayStart + slot.start * 60_000, endsAt: dayStart + slot.end * 60_000 };
 }
+
+/** The most blocks one "add task" can create (e.g. a daily task for ~4 months). */
+export const MAX_OCCURRENCES = 120;
+/** How far ahead you can plan. */
+export const MAX_DAYS_AHEAD = 366;
+
+export type PlacedDay = { dayKey: string; startsAt: number; endsAt: number };
+export type SkippedDay = { dayKey: string; error: string };
+
+/**
+ * Place the same task on several days (picked dates, or a repeating rule
+ * expanded by lib/planner/repeat.ts). Each day is placed like placeTask,
+ * and each new block counts as busy for the next, so they never overlap.
+ * Days that don't fit are skipped with the reason, instead of failing the
+ * whole request: "Gym every Mon/Thu/Fri at 5" still works if one Thursday
+ * at 5 is taken.
+ */
+export function placeMany(req: Omit<PlacementRequest, "dayKey"> & { dayKeys: string[] }) {
+  const placed: PlacedDay[] = [];
+  const skipped: SkippedDay[] = [];
+  const busy = [...req.busy];
+  for (const dayKey of [...new Set(req.dayKeys)].sort()) {
+    const slot = placeTask({ ...req, dayKey, busy });
+    if (slot.ok) {
+      placed.push({ dayKey, startsAt: slot.startsAt, endsAt: slot.endsAt });
+      busy.push({ start: slot.startsAt, end: slot.endsAt });
+    } else {
+      skipped.push({ dayKey, error: slot.error });
+    }
+  }
+  return { placed, skipped };
+}

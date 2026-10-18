@@ -1,6 +1,6 @@
 "use client";
 
-import { CheckCircle2, Circle, Sparkles, Trash2 } from "lucide-react";
+import { CheckCircle2, Circle, Repeat, Sparkles, Trash2 } from "lucide-react";
 import { useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Sheet } from "@/components/ui/sheet";
@@ -21,7 +21,7 @@ export function BlockDetailSheet({
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
-  const { blocks, setDone, deleteTask, timeZone } = usePlanner();
+  const { blocks, setDone, deleteTask, deleteBlock, timeZone } = usePlanner();
   const toast = useToast();
   // Remember the last block shown, so the sheet can animate closed after a delete.
   const live = blocks.find((b) => b.id === blockId) ?? null;
@@ -29,6 +29,8 @@ export function BlockDetailSheet({
   if (live) lastShown.current = live;
   const block = live ?? lastShown.current;
   const done = block?.status === "done";
+  // A repeating task is one task with several blocks.
+  const seriesSize = block ? blocks.filter((b) => b.taskId === block.taskId).length : 0;
   const close = () => onOpenChange(false);
 
   return (
@@ -48,8 +50,12 @@ export function BlockDetailSheet({
             className="task-block flex items-center gap-3 rounded-block py-3 pl-4 pr-3 text-subhead"
             style={{ "--block": `var(--task-${block.color})` } as React.CSSProperties}
           >
-            <Sparkles aria-hidden size={16} />
-            {done ? "Done. Nice work!" : "Planned for you. Finish it to grow your streak."}
+            {seriesSize > 1 ? <Repeat aria-hidden size={16} /> : <Sparkles aria-hidden size={16} />}
+            {done
+              ? "Done. Nice work!"
+              : seriesSize > 1
+                ? `Repeats: ${seriesSize} times on your schedule.`
+                : "Planned for you. Finish it to grow your streak."}
           </div>
 
           <Button
@@ -66,17 +72,44 @@ export function BlockDetailSheet({
             {done ? "Mark as not done" : "Mark complete"}
           </Button>
 
-          <Button
-            size="lg"
-            variant="danger"
-            onClick={async () => {
-              close();
-              const result = await deleteTask(block.taskId);
-              toast(result.ok ? "Task deleted" : result.error);
-            }}
-          >
-            <Trash2 aria-hidden size={18} /> Delete task
-          </Button>
+          {seriesSize > 1 ? (
+            <div className="grid grid-cols-2 gap-3">
+              <Button
+                size="lg"
+                variant="danger"
+                onClick={async () => {
+                  close();
+                  const result = await deleteBlock(block.id);
+                  toast(result.ok ? "Deleted this one" : result.error);
+                }}
+              >
+                <Trash2 aria-hidden size={18} /> This one
+              </Button>
+              <Button
+                size="lg"
+                variant="danger"
+                onClick={async () => {
+                  close();
+                  const result = await deleteTask(block.taskId);
+                  toast(result.ok ? `Deleted all ${seriesSize}` : result.error);
+                }}
+              >
+                <Trash2 aria-hidden size={18} /> All {seriesSize}
+              </Button>
+            </div>
+          ) : (
+            <Button
+              size="lg"
+              variant="danger"
+              onClick={async () => {
+                close();
+                const result = await deleteTask(block.taskId);
+                toast(result.ok ? "Task deleted" : result.error);
+              }}
+            >
+              <Trash2 aria-hidden size={18} /> Delete task
+            </Button>
+          )}
         </div>
       )}
     </Sheet>

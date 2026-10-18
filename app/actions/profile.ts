@@ -3,6 +3,7 @@
 import { z } from "zod";
 import { fieldErrors, profileSchema } from "@/lib/auth/schema";
 import { createClient } from "@/lib/supabase/server";
+import { isValidTimeZone } from "@/lib/time";
 
 type Result<T = object> = ({ ok: true } & T) | { ok: false; error: string; fieldErrors?: Record<string, string> };
 
@@ -75,6 +76,7 @@ const settingsSchema = z
     notifyFriends: z.boolean(),
     reminderLeadMinutes: z.union([z.literal(5), z.literal(10), z.literal(15), z.literal(30)]),
     weekStartsOn: z.union([z.literal(1), z.literal(7)]),
+    timeZone: z.string().refine(isValidTimeZone, "Unknown time zone"),
     discoverable: z.boolean(),
   })
   .partial();
@@ -92,6 +94,7 @@ export async function saveSettingsAction(input: z.infer<typeof settingsSchema>):
   if (v.reminderLeadMinutes !== undefined) row.reminder_lead_minutes = v.reminderLeadMinutes;
   if (v.weekStartsOn !== undefined) row.week_starts_on = v.weekStartsOn;
   if (v.discoverable !== undefined) row.discoverable = v.discoverable;
+  if (v.timeZone !== undefined) row.time_zone = v.timeZone;
   if (Object.keys(row).length === 0) return { ok: true };
   const { error } = await session.supabase.from("user_settings").update(row).eq("user_id", session.userId);
   return error ? { ok: false, error: "Couldn't save that setting." } : { ok: true };

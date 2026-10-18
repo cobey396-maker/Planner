@@ -28,12 +28,27 @@ async function addTask(page: Page, title: string, duration: string) {
   await page.getByRole("button", { name: "Plan it" }).click();
 }
 
+/** Open the sheet, name the task, run `choose` to pick when, then plan it. */
+async function addTaskWith(page: Page, title: string, choose: () => Promise<void>) {
+  await page.getByRole("button", { name: "Add task" }).first().click();
+  await page.getByPlaceholder("Study for chem test").fill(title);
+  await choose();
+  await page.getByRole("button", { name: /Plan it/ }).click();
+}
+
 test("every tab loads without errors and the tab bar navigates", async ({ page }) => {
   const errors = await openAt(page, "/today");
   await expect(page.getByRole("heading", { name: "Today", level: 1 })).toBeVisible();
-  for (const tab of ["Week", "Streaks", "Friends", "Settings", "Today"]) {
+  for (const [tab, heading] of [
+    ["Week", "Week"],
+    ["Streaks", "Streaks"],
+    ["Friends", "Friends"],
+    ["Helper", "Schedule Helper"],
+    ["Settings", "Settings"],
+    ["Today", "Today"],
+  ]) {
     await page.getByRole("link", { name: tab }).click();
-    await expect(page.getByRole("heading", { name: tab, level: 1 })).toBeVisible();
+    await expect(page.getByRole("heading", { name: heading, level: 1 })).toBeVisible();
     await expect(page.getByRole("link", { name: tab })).toHaveAttribute("aria-current", "page");
   }
   expect(errors).toEqual([]);
@@ -47,10 +62,11 @@ test("a new account gets a one-time tour of every tab except Settings", async ({
     ["Week", "/week"],
     ["Streaks", "/streaks"],
     ["Friends", "/friends"],
+    ["Schedule Helper", "/helper"],
   ]) {
     await expect(tour.getByRole("heading", { name: tab })).toBeVisible();
     await expect(page).toHaveURL(new RegExp(`${path}$`));
-    await tour.getByRole("button", { name: tab === "Friends" ? "Let's go" : "Next" }).click();
+    await tour.getByRole("button", { name: tab === "Schedule Helper" ? "Let's go" : "Next" }).click();
   }
   await expect(tour).toHaveCount(0);
   await expect(page).toHaveURL(/\/today$/);
@@ -95,7 +111,8 @@ test("streaks start at 0, badges start locked, and finishing a block counts", as
   await expect(page.getByTestId("points")).toHaveText("0");
   await expect(page.getByTestId("flame")).toHaveAttribute("data-color", "grey");
   await expect(page.getByText("Nothing due yet this week")).toBeVisible();
-  for (const badge of await page.locator("[data-testid^=badge-]").all()) {
+  await expect(page.getByTestId("badge-count")).toHaveText("0 of 31");
+  for (const badge of await page.locator("[data-testid^=badge-][data-earned]").all()) {
     await expect(badge).toHaveAttribute("data-earned", "false");
   }
 
@@ -112,8 +129,69 @@ test("streaks start at 0, badges start locked, and finishing a block counts", as
   await expect(page.getByTestId("points")).toHaveText("10");
   await expect(page.getByTestId("flame")).toHaveAttribute("data-color", "orange");
   await expect(page.getByText("You hit 100% of your plan")).toBeVisible();
-  // One 30-minute block at 10:45 AM doesn't unlock anything yet.
-  await expect(page.locator("[data-testid^=badge-][data-earned=true]")).toHaveCount(0);
+  // Exactly one badge unlocks: "First step". Everything else stays locked.
+  await expect(page.getByTestId("badge-first_step")).toHaveAttribute("data-earned", "true");
+  await expect(page.locator("[data-testid^=badge-][data-earned=true]")).toHaveCount(1);
+  await expect(page.getByTestId("badge-count")).toHaveText("1 of 31");
+});
+
+test("a repeating task: gym at 5 PM every Mon, Thu and Fri for 2 weeks", async ({ page }) => {
+  await openAt(page, "/week");
+  await page.getByRole("button", { name: "Add task" }).click();
+  await page.getByPlaceholder("Study for chem test").fill("Gym");
+  await page.getByRole("button", { name: "1h", exact: true }).click();
+  await page.getByRole("radio", { name: "Repeat" }).click();
+  await page.getByRole("button", { name: "Choose days" }).click();
+  // Today (Wednesday) starts selected; switch to Mon, Thu, Fri.
+  await page.getByRole("button", { name: "Wed", exact: true }).click();
+  for (const d of ["Mon", "Thu", "Fri"]) await page.getByRole("button", { name: d, exact: true }).click();
+  await page.getByLabel("Repeat for").selectOption("14");
+  await page.getByLabel("Start time").selectOption(String(17 * 60));
+  // Wed Oct 14 → Tue Oct 27: Thu 15, Fri 16, Mon 19, Thu 22, Fri 23, Mon 26.
+  await expect(page.getByTestId("repeat-summary")).toHaveText("6 times, every Mon, Thu & Fri at 5:00 PM, until Oct 26");
+  await page.getByRole("button", { name: "Plan it (6×)" }).click();
+  await expect(page.getByRole("status")).toHaveText("Planned 6 times");
+
+  // This week: Thursday and Friday have 1h each; next week has three.
+  await expect(page.getByRole("button", { name: "Thursday, Oct 15: 1h planned" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Friday, Oct 16: 1h planned" })).toBeVisible();
+  await expect(page.getByText("2h this week")).toBeVisible();
+  await page.getByRole("button", { name: "Next week" }).click();
+  await expect(page.getByText("3h this week")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Monday, Oct 19: 1h planned" })).toBeVisible();
+
+  // Deleting just one occurrence keeps the rest.
+  await page.getByLabel("Monday, October 19", { exact: true }).click();
+  await page.getByTestId("day-grid").getByRole("button", { name: /Gym/ }).click();
+  await expect(page.getByRole("dialog")).toContainText("Repeats: 6 times");
+  await page.getByRole("button", { name: "This one" }).click();
+  await expect(page.getByText("2h this week")).toBeVisible();
+});
+
+test("plan a month ahead with the calendar, or pick several days at once", async ({ page }) => {
+  await openAt(page, "/today");
+  await addTaskWith(page, "Dentist", async () => {
+    await page.getByRole("button", { name: "Pick a later date" }).click();
+    await page.getByRole("button", { name: "Next month" }).click();
+    await page.getByRole("button", { name: "Friday, November 20", exact: true }).click();
+  });
+  await expect(page.getByRole("status")).toHaveText("Planned for Fri, Nov 20 at 8:00 AM");
+
+  await addTaskWith(page, "Essay drafts", async () => {
+    await page.getByRole("radio", { name: "Pick days" }).click();
+    await page.getByRole("button", { name: "Wednesday, October 14", exact: true }).click(); // un-pick today
+    await page.getByRole("button", { name: "Monday, October 19", exact: true }).click();
+    await page.getByRole("button", { name: "Wednesday, October 21", exact: true }).click();
+    await page.getByRole("button", { name: "Next month" }).click();
+    await page.getByRole("button", { name: "Monday, November 2", exact: true }).click();
+  });
+  await expect(page.getByRole("status")).toHaveText("Planned 3 times");
+});
+
+test("Schedule Helper needs an account (no AI calls in demo mode)", async ({ page }) => {
+  await openAt(page, "/helper");
+  await expect(page.getByRole("heading", { name: "Schedule Helper", level: 1 })).toBeVisible();
+  await expect(page.getByText("Schedule Helper needs an account")).toBeVisible();
 });
 
 test("Friends starts empty: no made-up people", async ({ page }) => {

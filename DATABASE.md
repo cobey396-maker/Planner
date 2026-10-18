@@ -196,6 +196,21 @@ create buckets, the migration skips that step without failing. In that case,
 create it by hand: Dashboard > Storage > New bucket > name `avatars`,
 Public on, then add the same policies (see the end of the migration file).
 
+## Migration 3: repair accounts
+
+If an account was created before the sign-up trigger existed, it has no
+profile row, and saving any task fails ("Couldn't save the task"). Migration
+3 recreates the missing rows for every such account and adds
+`ensure_my_account()`, which the app calls automatically if it ever finds
+them missing again. Apply it the same way:
+
+```powershell
+npm.cmd run db:migrate
+```
+
+If the app shows "Your database needs an update", a migration hasn't been
+applied yet: run the command above and restart the app.
+
 ## Email notifications (after deploying)
 
 Reminders ("starts in 15 min"), missed-block notices and friend-request

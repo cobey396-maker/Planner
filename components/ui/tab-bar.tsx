@@ -1,6 +1,6 @@
 "use client";
 
-import { CalendarDays, CalendarRange, Flame, Settings, Users, type LucideIcon } from "lucide-react";
+import { CalendarDays, CalendarRange, Flame, Settings, Sparkles, Users, type LucideIcon } from "lucide-react";
 import { motion } from "motion/react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -13,12 +13,13 @@ export type TabItem = {
   icon: LucideIcon;
 };
 
-/** The app's five main sections. */
+/** The app's main sections. */
 export const APP_TABS: TabItem[] = [
   { href: "/today", label: "Today", icon: CalendarDays },
   { href: "/week", label: "Week", icon: CalendarRange },
   { href: "/streaks", label: "Streaks", icon: Flame },
   { href: "/friends", label: "Friends", icon: Users },
+  { href: "/helper", label: "Helper", icon: Sparkles },
   { href: "/settings", label: "Settings", icon: Settings },
 ];
 

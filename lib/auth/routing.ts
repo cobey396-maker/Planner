@@ -17,7 +17,7 @@ export type Visitor = {
 };
 
 /** The app's main screens. Everything under them needs an account or demo. */
-const APP_PREFIXES = ["/today", "/week", "/streaks", "/friends", "/settings"];
+const APP_PREFIXES = ["/today", "/week", "/streaks", "/friends", "/helper", "/settings"];
 
 export const DEMO_COOKIE = "planner-demo";
 /** A friend's invite code, remembered while a new person signs up. */

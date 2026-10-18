@@ -35,6 +35,12 @@ const STEPS = [
     title: "Friends",
     body: "Add friends with your invite link and find times you're both free. They only ever see that you're busy, never what you're doing.",
   },
+  {
+    tab: "/helper",
+    emoji: "✨",
+    title: "Schedule Helper",
+    body: "Just say what you need, like \"gym at 5 every Monday, Thursday and Friday\", and it plans it for you. It can also find free time and move things around.",
+  },
 ] as const;
 
 function readLocalDone(): boolean {

@@ -1,4 +1,5 @@
 import { TabTour } from "@/components/planner/tab-tour";
+import { TimeZoneCheck } from "@/components/planner/time-zone-check";
 import { TabBar } from "@/components/ui/tab-bar";
 import { AccountProvider } from "@/lib/auth/account-context";
 import { getAccount } from "@/lib/auth/session";
@@ -20,10 +21,12 @@ import { createClient } from "@/lib/supabase/server";
 export default async function TabsLayout({ children }: { children: React.ReactNode }) {
   const account = await getAccount();
   let initial: InitialPlannerData = EMPTY_PLANNER;
+  let databaseOutdated = false;
 
   if (account) {
     const supabase = await createClient();
     const data = await loadPlannerData(supabase!, account.id);
+    databaseOutdated = data.databaseOutdated;
     initial = {
       timeZone: data.settings.timeZone,
       weekStartsOn: data.settings.weekStartsOn,
@@ -49,6 +52,15 @@ export default async function TabsLayout({ children }: { children: React.ReactNo
   return (
     <AccountProvider account={account}>
       <PlannerProvider initial={initial} mode={account ? "remote" : "local"}>
+        {databaseOutdated && (
+          <div role="alert" className="pt-safe mx-auto max-w-2xl px-4">
+            <div className="mt-3 rounded-2xl bg-danger/10 px-4 py-3 text-subhead text-danger">
+              <strong>Your database needs an update.</strong> Some features won&apos;t save until you run{" "}
+              <code className="font-mono">npm.cmd run db:migrate</code> in the project folder, then restart the app.
+            </div>
+          </div>
+        )}
+        <TimeZoneCheck />
         {children}
         <TabBar />
         <TabTour accountTourDone={account ? account.tourDone : null} />

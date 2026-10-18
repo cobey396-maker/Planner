@@ -1,10 +1,10 @@
 "use server";
 
 import { z } from "zod";
-import { TASK_COLOR_NAMES, type TaskColor } from "@/lib/design/tokens";
 import { appUrl, sendEmail } from "@/lib/email/send";
 import { friendRequestEmail } from "@/lib/email/templates";
-import { placeTask } from "@/lib/planner/placement";
+import type { SkippedDay } from "@/lib/planner/placement";
+import { createTask, deleteBlock, deleteTask, setBlockDone, type NewTaskInput } from "@/lib/planner/tasks-server";
 import type { Interval, PlannedBlock } from "@/lib/planner/types";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
@@ -27,89 +27,35 @@ async function signedIn() {
 }
 const SESSION_EXPIRED = { ok: false as const, error: "Your session expired. Please sign in again." };
 
-const newTaskSchema = z.object({
-  title: z.string().trim().min(1, "Give your task a name").max(80),
-  minutes: z.number().int().min(15).max(480),
-  color: z.enum(TASK_COLOR_NAMES as [TaskColor, ...TaskColor[]]),
-  dayKey: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-  startMinute: z.number().int().min(0).max(1439).nullable(),
-});
-export type NewTaskInput = z.infer<typeof newTaskSchema>;
+export type { NewTaskInput };
 
-export async function createTaskAction(input: NewTaskInput): Promise<Result<{ block: PlannedBlock }>> {
-  const parsed = newTaskSchema.safeParse(input);
-  if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "Check the task details." };
+/** One task on one or more days (a repeating task is one task with many blocks). */
+export async function createTaskAction(input: NewTaskInput): Promise<Result<{ blocks: PlannedBlock[]; skipped: SkippedDay[] }>> {
   const session = await signedIn();
   if (!session) return SESSION_EXPIRED;
-  const { supabase, userId } = session;
-  const v = parsed.data;
-
-  const { data: settings } = await supabase.from("user_settings").select("time_zone").eq("user_id", userId).single();
-  const timeZone = (settings as { time_zone: string } | null)?.time_zone ?? "UTC";
-  const range = dayRange(v.dayKey, timeZone);
-
-  // What's already planned that day (overlapping it at all).
-  const { data: existing } = await supabase
-    .from("blocks")
-    .select("starts_at, ends_at")
-    .lt("starts_at", new Date(range.end).toISOString())
-    .gt("ends_at", new Date(range.start).toISOString())
-    .neq("status", "skipped");
-  const busy: Interval[] = ((existing ?? []) as { starts_at: string; ends_at: string }[]).map((b) => ({
-    start: Date.parse(b.starts_at),
-    end: Date.parse(b.ends_at),
-  }));
-
-  const slot = placeTask({ dayKey: v.dayKey, minutes: v.minutes, startMinute: v.startMinute, timeZone, now: Date.now(), busy });
-  if (!slot.ok) return slot;
-
-  const { data: task, error: taskError } = await supabase
-    .from("tasks")
-    .insert({ user_id: userId, title: v.title, color: v.color, estimated_minutes: v.minutes, min_session_minutes: Math.min(30, v.minutes) })
-    .select("id")
-    .single();
-  if (taskError || !task) return { ok: false, error: "Couldn't save the task. Please try again." };
-
-  const { data: block, error: blockError } = await supabase
-    .from("blocks")
-    .insert({ user_id: userId, task_id: task.id, starts_at: new Date(slot.startsAt).toISOString(), ends_at: new Date(slot.endsAt).toISOString() })
-    .select("id")
-    .single();
-  if (blockError || !block) {
-    // Undo the task so we don't leave an orphan (e.g. another tab grabbed
-    // the same time a split second earlier: the no-overlap rule caught it).
-    await supabase.from("tasks").delete().eq("id", task.id);
-    return { ok: false, error: "That time just got taken. Please try again." };
-  }
-
-  return {
-    ok: true,
-    block: { id: block.id, taskId: task.id, title: v.title, color: v.color, startsAt: slot.startsAt, endsAt: slot.endsAt, status: "planned", completedAt: null },
-  };
+  return createTask(session.supabase, session.userId, input);
 }
 
 const uuid = z.string().uuid();
 
-export async function setBlockDoneAction(blockId: string, done: boolean): Promise<Result<{ points: number; completedAt: number | null }>> {
-  if (!uuid.safeParse(blockId).success) return { ok: false, error: "Unknown block." };
+export async function setBlockDoneAction(blockId: string, done: boolean): Promise<Result> {
   const session = await signedIn();
   if (!session) return SESSION_EXPIRED;
-  if (done) {
-    const { data, error } = await session.supabase.rpc("complete_block", { block: blockId });
-    if (error) return { ok: false, error: "Couldn't mark it done. Please try again." };
-    return { ok: true, points: (data as number) ?? 0, completedAt: Date.now() };
-  }
-  const { error } = await session.supabase.rpc("uncomplete_block", { block: blockId });
-  if (error) return { ok: false, error: "Couldn't undo that. Please try again." };
-  return { ok: true, points: 0, completedAt: null };
+  return setBlockDone(session.supabase, blockId, done);
 }
 
+/** Delete a whole task (every occurrence of a repeating one). */
 export async function deleteTaskAction(taskId: string): Promise<Result> {
-  if (!uuid.safeParse(taskId).success) return { ok: false, error: "Unknown task." };
   const session = await signedIn();
   if (!session) return SESSION_EXPIRED;
-  const { error } = await session.supabase.from("tasks").delete().eq("id", taskId);
-  return error ? { ok: false, error: "Couldn't delete it. Please try again." } : { ok: true };
+  return deleteTask(session.supabase, taskId);
+}
+
+/** Delete just one occurrence. */
+export async function deleteBlockAction(blockId: string): Promise<Result> {
+  const session = await signedIn();
+  if (!session) return SESSION_EXPIRED;
+  return deleteBlock(session.supabase, blockId);
 }
 
 /** Best-effort "you have a friend request" email (needs the server email setup). */
