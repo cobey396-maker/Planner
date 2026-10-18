@@ -22,7 +22,7 @@ import { createClient } from "@/lib/supabase/server";
 export default async function TabsLayout({ children }: { children: React.ReactNode }) {
   const account = await getAccount();
   let initial: InitialPlannerData = EMPTY_PLANNER;
-  let databaseOutdated = false;
+  let databaseOutdated: string | null = null;
 
   if (account) {
     const supabase = await createClient();
@@ -62,6 +62,7 @@ export default async function TabsLayout({ children }: { children: React.ReactNo
             <div className="mt-3 rounded-2xl bg-danger/10 px-4 py-3 text-subhead text-danger">
               <strong>Your database needs an update.</strong> Some features won&apos;t save until you run{" "}
               <code className="font-mono">npm.cmd run db:migrate</code> in the project folder, then restart the app.
+              <span className="mt-1 block text-footnote opacity-80">Details: {databaseOutdated}</span>
             </div>
           </div>
         )}

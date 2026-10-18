@@ -34,7 +34,8 @@ export type PlannerData = {
   /** Blocks that were missed since last time (and the XP they cost). */
   missed: { count: number; xpLost: number } | null;
   /** The database is missing a migration: tell the user how to update it. */
-  databaseOutdated: boolean;
+  /** The database is missing a migration: what's missing (shown in a banner). */
+  databaseOutdated: string | null;
 };
 
 /** Blocks from this far back are enough for streaks, badges and recaps. */
@@ -116,15 +117,18 @@ export async function loadPlannerData(supabase: ServerSupabase, userId: string, 
 
   // An account without its profile row can't save anything (tasks need it).
   // Ask the database to recreate the missing rows, then load again, once.
-  let repairUnavailable = false;
+  let repairError: { code?: string; message: string } | null = null;
   if (!profile.data && profile.error?.code === "PGRST116" && !repaired) {
     const { error } = await supabase.rpc("ensure_my_account");
     if (!error) return loadPlannerData(supabase, userId, true);
-    repairUnavailable = MISSING_OBJECT.has(error.code ?? "");
+    repairError = error;
   }
-  const databaseOutdated =
-    repairUnavailable ||
-    (penalties.error !== null && MISSING_OBJECT.has(penalties.error.code ?? "")) || [settings, profile, suggestions].some((r) => r.error && MISSING_OBJECT.has(r.error.code ?? ""));
+  // The first "doesn't exist" error, if any: it names what's missing.
+  const missing = [repairError, penalties.error, settings.error, profile.error, suggestions.error].find(
+    (e) => e && MISSING_OBJECT.has(e.code ?? ""),
+  );
+  const databaseOutdated = missing ? `${missing.message} (${missing.code})` : null;
+  if (missing) console.error("[planner] the database is missing a migration:", databaseOutdated);
 
   // People connected to me: fetch their public profile fields in one query.
   const rows = (friendships.data ?? []) as { id: string; requester_id: string; addressee_id: string; status: string }[];
