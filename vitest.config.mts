@@ -8,7 +8,12 @@ import { fileURLToPath } from "node:url";
 export default defineConfig({
   plugins: [react()],
   resolve: {
-    alias: { "@": fileURLToPath(new URL("./", import.meta.url)) },
+    alias: {
+      "@": fileURLToPath(new URL("./", import.meta.url)),
+      // "server-only" throws when imported outside a React Server Component
+      // build. Tests aren't one, so swap in an empty module.
+      "server-only": fileURLToPath(new URL("./tests/stubs/server-only.ts", import.meta.url)),
+    },
   },
   test: {
     environment: "node",

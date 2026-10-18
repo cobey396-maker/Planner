@@ -1,6 +1,6 @@
 "use client";
 
-import { Sparkles } from "lucide-react";
+import { Clock, Loader2, Sparkles } from "lucide-react";
 import { motion } from "motion/react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -9,55 +9,63 @@ import { Sheet } from "@/components/ui/sheet";
 import { useToast } from "@/components/ui/toast";
 import { fluid } from "@/lib/design/motion";
 import { TASK_COLOR_NAMES, TASK_COLORS, type TaskColor } from "@/lib/design/tokens";
-import { DAY_END, usePlanner } from "@/lib/planner/store";
-import { formatClock, formatDuration, WEEKDAY_SHORT } from "@/lib/time";
+import { usePlanner } from "@/lib/planner/store";
+import { formatClock, formatDayKey, formatDuration, formatTime } from "@/lib/time";
+import { addDays } from "@/lib/tz";
 
-const DURATIONS = [30, 60, 90, 120, 180];
+const DURATIONS = [15, 30, 60, 90, 120, 180];
+/** Every 15 minutes, all day: planning is 24/7. */
+const TIMES = Array.from({ length: 96 }, (_, i) => i * 15);
 
 /**
- * The Add Task sheet. The natural-language bar sits on top (Claude parses it
- * in Phase 7); below it, the manual form that works today. "Plan it" asks the
- * planner for the first free slot and tells you where the task landed.
+ * ADD A TASK. Name, length, which day, and optionally an exact time.
+ * "Auto" puts it in the first open slot (from now if it's today, from 8 AM
+ * on other days). The natural-language bar on top arrives in Phase 7.
  */
 export function AddTaskSheet({
   open,
   onOpenChange,
   today,
-  nowMinutes,
+  initialDay,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  /** Index of today, 0 = Monday. */
-  today: number;
-  nowMinutes: number;
+  /** Today's day key in the user's time zone. */
+  today: string;
+  /** Pre-selected day (e.g. the day you're looking at on Week). */
+  initialDay?: string;
 }) {
-  const { addTask } = usePlanner();
+  const { addTask, timeZone } = usePlanner();
   const toast = useToast();
-  // Late at night there's no room left today, so start the choices tomorrow.
-  const firstDay = nowMinutes >= DAY_END - 30 && today < 6 ? today + 1 : today;
   const [title, setTitle] = useState("");
   const [minutes, setMinutes] = useState(60);
-  const [day, setDay] = useState(firstDay);
+  const [day, setDay] = useState(initialDay && initialDay >= today ? initialDay : today);
+  const [startMinute, setStartMinute] = useState<number | null>(null);
   const [color, setColor] = useState<TaskColor>("orange");
   const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
 
-  const days = Array.from({ length: 7 - firstDay }, (_, i) => firstDay + i);
+  const days = Array.from({ length: 14 }, (_, i) => addDays(today, i));
+  // Keep the chosen day valid if the sheet is reopened from another day.
+  const selectedDay = days.includes(day) ? day : today;
 
-  function submit() {
-    const name = title.trim();
-    if (!name) {
+  async function submit() {
+    if (!title.trim()) {
       setError("Give your task a name first.");
       return;
     }
-    // Tasks for today can't be placed in the past.
-    const block = addTask({ title: name, minutes, color, day }, day === today ? nowMinutes : undefined);
-    if (!block) {
-      setError(`No ${formatDuration(minutes)} gap left that day. Try a shorter time or another day.`);
+    setSaving(true);
+    setError(null);
+    const result = await addTask({ title, minutes, color, dayKey: selectedDay, startMinute });
+    setSaving(false);
+    if (!result.ok) {
+      setError(result.error);
       return;
     }
-    toast(`Planned for ${day === today ? "today" : WEEKDAY_SHORT[day]} at ${formatClock(block.start)}`);
+    const label = selectedDay === today ? "today" : formatDayKey(selectedDay, { weekday: "short" });
+    toast(`Planned for ${label} at ${formatTime(result.block.startsAt, timeZone)}`);
     setTitle("");
-    setError(null);
+    setStartMinute(null);
     onOpenChange(false);
   }
 
@@ -67,19 +75,9 @@ export function AddTaskSheet({
         className="flex flex-col gap-5 pt-1"
         onSubmit={(e) => {
           e.preventDefault();
-          submit();
+          void submit();
         }}
       >
-        <div className="glass-card flex items-center gap-2 rounded-2xl px-3">
-          <Sparkles aria-hidden size={18} className="shrink-0 text-tint" />
-          <input
-            disabled
-            aria-label="Describe tasks in plain English (coming soon)"
-            placeholder="“essay due fri ~3hrs, gym MWF 6pm” · soon"
-            className="h-12 w-full bg-transparent text-body outline-none placeholder:text-tertiary-label"
-          />
-        </div>
-
         <label className="flex flex-col gap-1.5">
           <span className="px-1 text-footnote font-medium text-secondary-label">Task</span>
           <input
@@ -102,13 +100,37 @@ export function AddTaskSheet({
           ))}
         </ChipRow>
 
-        <ChipRow label="When?">
+        <ChipRow label="Which day?">
           {days.map((d) => (
-            <Chip key={d} group="day" selected={day === d} onClick={() => setDay(d)}>
-              {d === today ? "Today" : d === today + 1 ? "Tomorrow" : WEEKDAY_SHORT[d]}
+            <Chip key={d} group="day" selected={selectedDay === d} onClick={() => setDay(d)}>
+              {d === today
+                ? "Today"
+                : d === addDays(today, 1)
+                  ? "Tomorrow"
+                  : formatDayKey(d, { weekday: "short", month: "short", day: "numeric" })}
             </Chip>
           ))}
         </ChipRow>
+
+        <label className="flex flex-col gap-1.5">
+          <span className="px-1 text-footnote font-medium text-secondary-label">What time?</span>
+          <span className="flex h-12 items-center gap-2 rounded-2xl bg-fill px-4">
+            <Clock aria-hidden size={18} className="shrink-0 text-tint" />
+            <select
+              aria-label="Start time"
+              value={startMinute ?? "auto"}
+              onChange={(e) => setStartMinute(e.target.value === "auto" ? null : Number(e.target.value))}
+              className="min-w-0 flex-1 bg-transparent text-body outline-none"
+            >
+              <option value="auto">Auto: first open time</option>
+              {TIMES.map((m) => (
+                <option key={m} value={m}>
+                  {formatClock(m)}
+                </option>
+              ))}
+            </select>
+          </span>
+        </label>
 
         <div>
           <span className="px-1 text-footnote font-medium text-secondary-label">Color</span>
@@ -136,13 +158,19 @@ export function AddTaskSheet({
         </div>
 
         {error && (
-          <p role="alert" className="px-1 text-subhead text-danger">
+          <p role="alert" className="rounded-2xl bg-danger/10 px-4 py-3 text-subhead text-danger">
             {error}
           </p>
         )}
 
-        <Button type="submit" size="lg">
-          <Sparkles aria-hidden size={18} /> Plan it
+        <Button type="submit" size="lg" disabled={saving}>
+          {saving ? (
+            <Loader2 aria-hidden size={20} className="animate-spin" />
+          ) : (
+            <>
+              <Sparkles aria-hidden size={18} /> Plan it
+            </>
+          )}
         </Button>
       </form>
     </Sheet>

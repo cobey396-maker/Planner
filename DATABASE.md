@@ -177,6 +177,48 @@ How it fits together:
 | `app/auth/callback/route.ts` | Where email links land; exchanges the one-time code for a session. |
 | `lib/auth/session.ts` | `getAccount()`: the verified user (`getClaims()`), for Server Components. |
 
+## Migration 2: profiles, suggestions, email notifications
+
+Adds profile photo, city and state; the "Suggest me to others" setting;
+24/7 planning for everyone; `suggest_friends()`; and the email
+notification functions. Apply it from the project folder:
+
+```powershell
+git pull origin main
+npm.cmd ci
+npm.cmd run db:migrate
+```
+
+**Profile photos** live in a Storage bucket called `avatars`. The migration
+creates it (public, 1 MB max, JPG/PNG/WebP) with policies that only let a
+user write inside their own folder. If your database user isn't allowed to
+create buckets, the migration skips that step without failing. In that case,
+create it by hand: Dashboard > Storage > New bucket > name `avatars`,
+Public on, then add the same policies (see the end of the migration file).
+
+## Email notifications (after deploying)
+
+Reminders ("starts in 15 min"), missed-block notices and friend-request
+emails are sent by `GET /api/cron/notifications`. It only works on a
+deployed app with these set (see `.env.example`): `SUPABASE_SECRET_KEY`,
+`RESEND_API_KEY`, `NOTIFY_FROM_EMAIL`, `CRON_SECRET`.
+
+Something has to call it every few minutes. Vercel's free plan only runs
+crons daily, so use Supabase itself (Dashboard > Integrations > Cron, which
+uses `pg_cron` + `pg_net`):
+
+```sql
+select cron.schedule('planner-notifications', '*/5 * * * *', $$
+  select net.http_get(
+    url := 'https://YOUR-APP.vercel.app/api/cron/notifications',
+    headers := jsonb_build_object('Authorization', 'Bearer YOUR-CRON-SECRET')
+  );
+$$);
+```
+
+Each block is claimed before it's emailed (`claim_notifications()`), so
+overlapping runs never send the same email twice.
+
 ## Changing the schema later
 
 1. Edit `prisma/schema.prisma`.

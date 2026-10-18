@@ -49,6 +49,7 @@ export function TabBar({ items = APP_TABS }: { items?: TabItem[] }) {
             <li key={href} className="flex-1">
               <Link
                 href={href}
+                data-tab={href}
                 aria-current={active ? "page" : undefined}
                 className={cn(
                   "relative flex h-14 flex-col items-center justify-center gap-0.5 rounded-full",

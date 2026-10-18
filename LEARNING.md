@@ -421,9 +421,14 @@ Passwords go from our server straight to Supabase, and validation runs
 again on the server, because anything in the browser can be bypassed.
 
 **2. Cookies, not localStorage.** `@supabase/ssr` keeps the session in
-cookies so the server can read it for server-rendered pages. JavaScript in
-the page can't read httpOnly cookies, which limits what a cross-site
-scripting bug could steal.
+cookies so the server can read it for server-rendered pages and the
+middleware. *Correction:* I first wrote that these cookies are httpOnly.
+They are not, by default: the browser-side Supabase client needs to read
+them. So the real defense against stolen sessions is not having cross-site
+scripting bugs at all (React escapes text by default; we never use
+`dangerouslySetInnerHTML` with user data) plus short-lived access tokens.
+Our own invite cookie (`pending-invite`) *is* httpOnly because only the
+server reads it.
 
 **3. Verify, don't trust.** On the server we use `getClaims()`, which checks
 the token's cryptographic signature. `getSession()` would just read the
@@ -463,8 +468,8 @@ tests OUR logic quickly and deterministically, without a network.
 The sign-up form calls a Next.js server action, which re-validates the input
 with zod and calls Supabase Auth. Supabase hashes the password, sends a
 confirmation email, and on confirmation the link hits my `/auth/callback`
-route, which exchanges a one-time code for a session stored in httpOnly
-cookies. On every request, middleware refreshes the token if needed, verifies
+route, which exchanges a one-time code for a session stored in cookies
+(readable by the Supabase browser client, so not httpOnly). On every request, middleware refreshes the token if needed, verifies
 it with `getClaims()`, and redirects based on a pure `routeFor()` function.
 Database queries carry the same token, so Postgres row-level security
 enforces the same identity.
@@ -482,3 +487,70 @@ validation (every action re-validates with the same zod schema), leaking
 secrets (only the public publishable key is in the browser; the database
 password is server-only), and stale state (refreshing the token after
 changing metadata). Each one has a unit test.
+
+## Update: real data everywhere (fresh accounts, 24/7 planning, emails)
+
+**In plain English:** the screens stopped using sample data. A new account
+now starts truly empty (no tasks, 0 streak, 0 points, no friends, every
+badge locked) and everything you see is computed from what you actually do.
+
+What changed and why:
+
+- **24/7 planning.** No more "planning hours". Auto placement uses the first
+  open quarter hour from *now* (for today) or from 8 AM (other days), and you
+  can also pick an exact time. Onboarding still asks your **time zone**,
+  plus an optional **city and state** and **profile photo** (skip it and you
+  get your initials).
+- **Time zones done properly** (`lib/tz.ts`). A "day" is midnight to midnight
+  *in your zone*, which is 23 or 25 hours on daylight-saving days. Blocks are
+  stored as UTC instants; we convert only for display. Week hours come from
+  one function (`hoursByDay`) used by both the chart and the grid, so they
+  can't disagree.
+- **Stats from data** (`lib/planner/stats.ts`): streak = consecutive days
+  with at least one finished block (yesterday still counts until midnight),
+  10 points per finished block, purple flame at 10+ days, and each badge has
+  a precise rule. All pure functions, unit-tested.
+- **Friends without filler.** "People you may know" comes from a Postgres
+  function, `suggest_friends()`: friends of friends first (ranked by mutual
+  count), then people in the same city and state. Only people who left
+  "Suggest me to others" on are shown. Invite links (`/add/<code>`) work even
+  before the friend has an account: the code waits in a cookie until they
+  finish onboarding.
+- **First-run tour** of Today, Week, Streaks and Friends, saved on the
+  account so it shows once.
+- **Email notifications** until there's an installed app: a cron endpoint
+  (`/api/cron/notifications`) asks Postgres to *claim* due reminders
+  (`claim_notifications()` marks them sent in the same statement, so two
+  overlapping cron runs can't email twice), then sends them with Resend.
+- **Profile photos** are cropped and shrunk to 256px in the browser before
+  upload (fast, and it strips GPS data hidden in phone photos). Storage
+  policies only let you write inside your own folder.
+
+**Key concepts:** UTC storage vs. local display, DST-safe day ranges,
+derived state (compute stats instead of storing them), claim-then-send for
+exactly-once jobs, SECURITY DEFINER functions as a narrow, audited door
+through row-level security.
+
+**Interview questions**
+
+**Q1. How do you store times for users in different time zones?**
+As UTC instants (`timestamptz`), plus each user's IANA zone name. All
+"which day is this?" logic converts to the user's zone at the edges. Never
+store "local time without a zone", and never assume a day is 24 hours: on
+DST days it's 23 or 25, so I compute a day's range as midnight-to-next-
+midnight in that zone.
+
+**Q2. How do you stop a scheduled job from sending the same email twice?**
+Make "pick the work" and "mark it taken" one atomic step. My
+`claim_notifications()` runs an `UPDATE ... SET reminder_sent_at = now()
+WHERE reminder_sent_at IS NULL ... RETURNING ...`, so a second run (or an
+overlapping one) finds nothing left to claim. The trade-off is at-most-once:
+if sending fails after claiming, that email is lost, which is acceptable for
+reminders.
+
+**Q3. How do friend suggestions work without leaking private data?**
+A SECURITY DEFINER function runs with elevated rights but only returns a
+fixed, minimal set of columns (name, handle, photo, city, mutual count) for
+people who opted in, excluding you and anyone you're already connected to.
+Clients can't query other users' profiles directly; RLS blocks that. The
+function is the only, narrow door.

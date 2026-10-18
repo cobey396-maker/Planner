@@ -1,28 +1,48 @@
 import type { TaskColor } from "@/lib/design/tokens";
 
-/** A span of time within one day, in minutes since midnight. [start, end) */
+/** A span of time, in minutes (or ms, where noted). [start, end) */
 export type Interval = { start: number; end: number };
 
+export type BlockStatus = "planned" | "done" | "missed" | "skipped";
+
 /**
- * One block on the schedule. `day` is 0–6 (Monday–Sunday of the current week).
- * In Phase 2 this becomes a database row with real timestamps; the shape of
- * the UI code stays the same.
+ * One scheduled work session, as the screens use it. Times are exact
+ * instants (epoch milliseconds); screens turn them into local days and
+ * times with lib/tz.ts in the user's own time zone.
  */
-export type Block = Interval & {
+export type PlannedBlock = {
   id: string;
+  taskId: string;
   title: string;
   color: TaskColor;
-  kind: "event" | "task";
-  day: number;
+  startsAt: number;
+  endsAt: number;
+  status: BlockStatus;
+  completedAt: number | null;
 };
 
-export type Friend = {
+/** What friends (and suggested people) can see of each other. */
+export type PersonSummary = {
   id: string;
-  name: string;
+  displayName: string;
   handle: string;
-  color: TaskColor;
-  /** When they're busy each day (Mon–Sun). We never see WHAT they're doing. */
-  busy: Interval[][];
+  avatarUrl: string | null;
+  avatarColor: TaskColor;
+  city: string | null;
+  region: string | null;
 };
 
-export type FriendRequest = { id: string; name: string; handle: string; color: TaskColor };
+export type FriendRequest = { friendshipId: string; from: PersonSummary };
+export type Suggestion = PersonSummary & { mutualCount: number; reason: "mutual" | "nearby" };
+export type HangoutInvite = {
+  id: string;
+  from: PersonSummary;
+  startsAt: number;
+  endsAt: number;
+  activity: string;
+};
+
+export type PlannerSettings = {
+  timeZone: string;
+  weekStartsOn: 1 | 7;
+};

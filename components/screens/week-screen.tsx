@@ -1,8 +1,11 @@
 "use client";
 
+import { ChevronLeft, ChevronRight, Plus } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { AddTaskSheet } from "@/components/planner/add-task-sheet";
 import { BlockDetailSheet, useBlockDetail } from "@/components/planner/block-detail-sheet";
+import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { LargeTitlePage } from "@/components/ui/large-title-page";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -10,26 +13,49 @@ import { TaskBlock } from "@/components/ui/task-block";
 import { cn } from "@/lib/cn";
 import { useEntrance } from "@/lib/design/entrance";
 import { fadeUp, fluid, stagger } from "@/lib/design/motion";
-import { blocksForDay, DAY_END, DAY_START, usePlanner } from "@/lib/planner/store";
-import type { Block } from "@/lib/planner/types";
-import { addDays, formatClock, formatRange, minutesOfDay, mondayIndex, startOfWeek, WEEKDAY_SHORT } from "@/lib/time";
+import { usePlanner } from "@/lib/planner/store";
+import type { PlannedBlock } from "@/lib/planner/types";
+import { formatClock, formatDayKey, formatDuration, formatTimeRange } from "@/lib/time";
+import { addDays, dayKey, dayRange, startOfWeek } from "@/lib/tz";
 import { useNow } from "@/lib/use-now";
 
-/** Vertical pixels per hour in the day grid. */
-const HOUR_PX = 56;
+/** Vertical pixels per hour in the 24-hour day grid. */
+const HOUR_PX = 48;
+
+/** Hours planned per day of a week: the SAME blocks the grid draws, so they always agree. */
+export function hoursByDay(blocks: PlannedBlock[], weekDays: string[], timeZone: string): number[] {
+  return weekDays.map((day) => {
+    const { start, end } = dayRange(day, timeZone);
+    const minutes = blocks
+      .filter((b) => b.startsAt >= start && b.startsAt < end && b.status !== "skipped")
+      .reduce((sum, b) => sum + (b.endsAt - b.startsAt) / 60000, 0);
+    return minutes / 60;
+  });
+}
 
 /**
- * WEEK: how loaded each day is (bar chart), a day picker, and the chosen day
- * as a real calendar grid where block height = duration.
+ * WEEK: a real calendar week (Mon–Sun or Sun–Sat, from your settings) in
+ * your time zone. Step to other weeks, see hours planned per day, pick a day
+ * to see it as a 24-hour grid, and add tasks with +.
  */
 export function WeekScreen() {
   const entrance = useEntrance();
   const now = useNow();
-  const [picked, setPicked] = useState<number | null>(null);
+  const { blocks, timeZone, weekStartsOn } = usePlanner();
+  const [weekOffset, setWeekOffset] = useState(0);
+  const [picked, setPicked] = useState<string | null>(null);
+  const [adding, setAdding] = useState(false);
+  const detail = useBlockDetail();
+
+  const addButton = (
+    <Button variant="glass" size="icon" aria-label="Add task" onClick={() => setAdding(true)} disabled={!now}>
+      <Plus size={22} className="text-tint" />
+    </Button>
+  );
 
   if (!now) {
     return (
-      <LargeTitlePage title="Week" subtitle={<Skeleton className="h-4 w-28" />}>
+      <LargeTitlePage title="Week" subtitle={<Skeleton className="h-4 w-28" />} trailing={addButton}>
         <Skeleton className="mb-5 h-40 rounded-card" />
         <Skeleton className="mb-5 h-16 rounded-full" />
         <Skeleton className="h-96 rounded-card" />
@@ -37,96 +63,126 @@ export function WeekScreen() {
     );
   }
 
-  const today = mondayIndex(now);
-  const day = picked ?? today;
-  const monday = startOfWeek(now);
-  const sunday = addDays(monday, 6);
-  const range = new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" }).formatRange(monday, sunday);
+  const today = dayKey(now.getTime(), timeZone);
+  const weekStart = addDays(startOfWeek(today, weekStartsOn), weekOffset * 7);
+  const weekDays = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
+  // The selected day: what you picked (if it's in this week), else today, else the first day.
+  const day = picked && weekDays.includes(picked) ? picked : weekDays.includes(today) ? today : weekStart;
+  const range = `${formatDayKey(weekStart, { month: "short", day: "numeric" })} – ${formatDayKey(weekDays[6], { month: "short", day: "numeric" })}`;
 
   return (
-    <LargeTitlePage title="Week" subtitle={range}>
+    <LargeTitlePage title="Week" subtitle={range} trailing={addButton}>
       <motion.div variants={stagger} initial={entrance} animate="animate" className="flex flex-col gap-5">
-        <motion.div variants={fadeUp}>
-          <LoadChart selected={day} today={today} onSelect={setPicked} />
+        <motion.div variants={fadeUp} className="flex items-center justify-between">
+          <Button variant="glass" size="icon" aria-label="Previous week" onClick={() => setWeekOffset((w) => w - 1)}>
+            <ChevronLeft size={20} className="text-tint" />
+          </Button>
+          <button
+            type="button"
+            onClick={() => {
+              setWeekOffset(0);
+              setPicked(today);
+            }}
+            disabled={weekOffset === 0}
+            className="text-subhead font-semibold text-tint disabled:text-secondary-label"
+          >
+            {weekOffset === 0 ? "This week" : weekOffset === 1 ? "Next week" : weekOffset === -1 ? "Last week" : "Back to this week"}
+          </button>
+          <Button variant="glass" size="icon" aria-label="Next week" onClick={() => setWeekOffset((w) => w + 1)}>
+            <ChevronRight size={20} className="text-tint" />
+          </Button>
         </motion.div>
         <motion.div variants={fadeUp}>
-          <DayStrip monday={monday} selected={day} today={today} onSelect={setPicked} />
+          <LoadChart blocks={blocks} weekDays={weekDays} selected={day} today={today} timeZone={timeZone} onSelect={setPicked} />
         </motion.div>
         <motion.div variants={fadeUp}>
-          <DayGrid day={day} isToday={day === today} nowMin={minutesOfDay(now)} />
+          <DayStrip weekDays={weekDays} selected={day} today={today} onSelect={setPicked} />
+        </motion.div>
+        <motion.div variants={fadeUp}>
+          <DayGrid
+            day={day}
+            blocks={blocks}
+            timeZone={timeZone}
+            now={now.getTime()}
+            isToday={day === today}
+            onOpen={detail.show}
+            onAdd={() => setAdding(true)}
+          />
         </motion.div>
       </motion.div>
+      <AddTaskSheet key={`${today}-${day}`} open={adding} onOpenChange={setAdding} today={today} initialDay={day} />
+      <BlockDetailSheet {...detail.sheetProps} />
     </LargeTitlePage>
   );
 }
 
 /**
- * Hours planned per day. One series, so one hue (the tint) and no legend:
- * the title names it. Bars are thin with rounded tops anchored to the
- * baseline, the selected day is solid and the rest are softer. Each bar is a
- * button with a full aria-label, so the chart also works without sight.
+ * Hours planned per day. One series → one hue (the tint), no legend; the
+ * title names it. Each bar is a button with a full label for screen readers.
  */
 function LoadChart({
+  blocks,
+  weekDays,
   selected,
   today,
+  timeZone,
   onSelect,
 }: {
-  selected: number;
-  today: number;
-  onSelect: (d: number) => void;
+  blocks: PlannedBlock[];
+  weekDays: string[];
+  selected: string;
+  today: string;
+  timeZone: string;
+  onSelect: (day: string) => void;
 }) {
-  const { blocks } = usePlanner();
-  const hours = WEEKDAY_SHORT.map((_, d) =>
-    blocks.filter((b) => b.day === d).reduce((sum, b) => sum + (b.end - b.start), 0) / 60,
-  );
-  const max = Math.max(8, ...hours);
+  const hours = hoursByDay(blocks, weekDays, timeZone);
+  const max = Math.max(4, ...hours);
   const total = hours.reduce((a, b) => a + b, 0);
+  const selectedHours = hours[weekDays.indexOf(selected)] ?? 0;
+  const fmt = (h: number) => formatDuration(Math.round(h * 60)).replace(/^0m$/, "0h");
 
   return (
     <Card>
       <div className="flex items-baseline justify-between">
         <h2 className="text-headline">Hours planned</h2>
-        <span className="text-footnote text-secondary-label">{total.toFixed(1)} h this week</span>
+        <span className="text-footnote text-secondary-label">{fmt(total)} this week</span>
       </div>
       <div className="mt-1 text-title2 tabular-nums">
-        {hours[selected].toFixed(1)} h{" "}
+        {fmt(selectedHours)}{" "}
         <span className="text-subhead font-normal text-secondary-label">
-          on {selected === today ? "today" : WEEKDAY_SHORT[selected]}
+          on {selected === today ? "today" : formatDayKey(selected, { weekday: "long" })}
         </span>
       </div>
       <div className="mt-3 flex h-24 items-end gap-2">
-        {hours.map((h, d) => (
+        {weekDays.map((d, i) => (
           <button
             key={d}
             type="button"
             onClick={() => onSelect(d)}
-            aria-label={`${WEEKDAY_SHORT[d]}: ${h.toFixed(1)} hours planned`}
+            aria-label={`${formatDayKey(d, { weekday: "long", month: "short", day: "numeric" })}: ${fmt(hours[i])} planned`}
             aria-pressed={d === selected}
-            className="group flex h-full flex-1 flex-col items-center justify-end gap-1.5"
+            className="flex h-full flex-1 flex-col items-center justify-end"
           >
             <motion.span
               className="w-full max-w-7 rounded-t-[4px] rounded-b-[2px]"
-              initial={{ height: 0 }}
+              initial={false}
               animate={{
-                height: `${Math.max(4, (h / max) * 100)}%`,
+                height: hours[i] > 0 ? `${Math.max(6, (hours[i] / max) * 100)}%` : "3px",
                 opacity: d === selected ? 1 : 0.35,
               }}
               transition={fluid}
-              style={{ background: "var(--tint)" }}
+              style={{ background: hours[i] > 0 ? "var(--tint)" : "var(--fill)" }}
             />
           </button>
         ))}
       </div>
       <div className="mt-1.5 flex gap-2 border-t border-separator pt-1.5">
-        {WEEKDAY_SHORT.map((d, i) => (
+        {weekDays.map((d) => (
           <span
             key={d}
-            className={cn(
-              "flex-1 text-center text-caption",
-              i === selected ? "font-semibold text-label" : "text-secondary-label",
-            )}
+            className={cn("flex-1 text-center text-caption", d === selected ? "font-semibold text-label" : "text-secondary-label")}
           >
-            {d[0]}
+            {formatDayKey(d, { weekday: "narrow" })}
           </span>
         ))}
       </div>
@@ -134,28 +190,29 @@ function LoadChart({
   );
 }
 
-/** Mon–Sun with dates; the selected day sits under a sliding glass lens. */
+/** The week's days with dates; the selected one sits under a sliding lens. */
 function DayStrip({
-  monday,
+  weekDays,
   selected,
   today,
   onSelect,
 }: {
-  monday: Date;
-  selected: number;
-  today: number;
-  onSelect: (d: number) => void;
+  weekDays: string[];
+  selected: string;
+  today: string;
+  onSelect: (day: string) => void;
 }) {
   return (
     <div className="glass-card flex rounded-full p-1" role="tablist" aria-label="Day">
-      {WEEKDAY_SHORT.map((label, d) => {
+      {weekDays.map((d) => {
         const active = d === selected;
         return (
           <button
-            key={label}
+            key={d}
             type="button"
             role="tab"
             aria-selected={active}
+            aria-label={formatDayKey(d, { weekday: "long", month: "long", day: "numeric" })}
             onClick={() => onSelect(d)}
             className="relative flex h-14 flex-1 flex-col items-center justify-center rounded-full"
           >
@@ -166,13 +223,8 @@ function DayStrip({
                 className="absolute inset-0 rounded-full bg-tint shadow-[inset_0_1px_0_rgb(255_255_255/0.35)]"
               />
             )}
-            <span
-              className={cn(
-                "relative text-caption font-medium",
-                active ? "text-on-tint/80" : "text-secondary-label",
-              )}
-            >
-              {label}
+            <span className={cn("relative text-caption font-medium", active ? "text-on-tint/80" : "text-secondary-label")}>
+              {formatDayKey(d, { weekday: "short" })}
             </span>
             <span
               className={cn(
@@ -180,7 +232,7 @@ function DayStrip({
                 active ? "text-on-tint" : d === today ? "text-tint" : "text-label",
               )}
             >
-              {addDays(monday, d).getDate()}
+              {formatDayKey(d, { day: "numeric" })}
             </span>
           </button>
         );
@@ -189,66 +241,98 @@ function DayStrip({
   );
 }
 
-/** The chosen day as an hour grid. Switching days slides the grid sideways. */
-function DayGrid({ day, isToday, nowMin }: { day: number; isToday: boolean; nowMin: number }) {
-  const { blocks, completed } = usePlanner();
-  const detail = useBlockDetail();
-  const hours = Array.from({ length: (DAY_END - DAY_START) / 60 + 1 }, (_, i) => DAY_START + i * 60);
-  const dayBlocks = blocksForDay(blocks, day);
-  const y = (min: number) => ((min - DAY_START) / 60) * HOUR_PX;
+/** The chosen day as a 24-hour grid (planning is 24/7). */
+function DayGrid({
+  day,
+  blocks,
+  timeZone,
+  now,
+  isToday,
+  onOpen,
+  onAdd,
+}: {
+  day: string;
+  blocks: PlannedBlock[];
+  timeZone: string;
+  now: number;
+  isToday: boolean;
+  onOpen: (b: PlannedBlock) => void;
+  onAdd: () => void;
+}) {
+  const { start, end } = dayRange(day, timeZone);
+  // Real elapsed minutes from local midnight, so 23/25-hour DST days lay out correctly.
+  const y = (ms: number) => ((ms - start) / 3_600_000) * HOUR_PX;
+  const hours = Array.from({ length: Math.round((end - start) / 3_600_000) + 1 }, (_, i) => i);
+  const dayBlocks = blocks.filter((b) => b.startsAt >= start && b.startsAt < end);
+  const scroller = useRef<HTMLDivElement>(null);
+
+  // Open the grid scrolled to the first block (or "now"), not to midnight.
+  const focusMs = isToday ? now : (dayBlocks[0]?.startsAt ?? start + 8 * 3_600_000);
+  useEffect(() => {
+    scroller.current?.scrollTo({ top: Math.max(0, y(focusMs) - 2 * HOUR_PX) });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only when the day changes
+  }, [day]);
 
   return (
     <Card className="relative overflow-hidden p-0">
-      <AnimatePresence mode="popLayout" initial={false}>
-        <motion.div
-          key={day}
-          initial={{ opacity: 0, x: 40 }}
-          animate={{ opacity: 1, x: 0 }}
-          exit={{ opacity: 0, x: -40 }}
-          transition={fluid}
-          className="relative mx-3 my-4"
-          style={{ height: y(DAY_END) }}
-        >
-          {hours.map((m) => (
-            <div key={m} className="absolute inset-x-0 flex items-center gap-2" style={{ top: y(m) - 8 }}>
-              <span className="w-11 shrink-0 text-right text-caption text-tertiary-label tabular-nums">
-                {formatClock(m).replace(":00", "")}
-              </span>
-              <span className="h-px flex-1 bg-separator" />
-            </div>
-          ))}
+      {dayBlocks.length === 0 && (
+        <div className="flex items-center justify-between gap-3 border-b border-separator px-4 py-3">
+          <span className="text-subhead text-secondary-label">Nothing planned this day.</span>
+          <Button size="sm" variant="tinted" className="rounded-full" onClick={onAdd}>
+            <Plus aria-hidden size={16} /> Add
+          </Button>
+        </div>
+      )}
+      <div ref={scroller} className="max-h-[28rem] overflow-y-auto" data-testid="day-grid">
+        <AnimatePresence mode="popLayout" initial={false}>
+          <motion.div
+            key={day}
+            initial={{ opacity: 0, x: 40 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: -40 }}
+            transition={fluid}
+            className="relative mx-3 my-4"
+            style={{ height: y(end) }}
+          >
+            {hours.map((h) => (
+              <div key={h} className="absolute inset-x-0 flex items-center gap-2" style={{ top: h * HOUR_PX - 8 }}>
+                <span className="w-11 shrink-0 text-right text-caption text-tertiary-label tabular-nums">
+                  {formatClock((h % 24) * 60).replace(":00", "")}
+                </span>
+                <span className="h-px flex-1 bg-separator" />
+              </div>
+            ))}
 
-          {dayBlocks.map((b: Block) => {
-            const height = Math.max(26, y(b.end) - y(b.start) - 3);
-            return (
-              <TaskBlock
-                key={b.id}
-                title={b.title}
-                timeLabel={formatRange(b.start, b.end)}
-                color={b.color}
-                kind={b.kind}
-                completed={completed.has(b.id)}
-                compact={height < 54}
-                onClick={() => detail.show(b)}
-                className="absolute right-0 left-[3.25rem] w-auto"
-                style={{ top: y(b.start) + 1, height }}
-              />
-            );
-          })}
+            {dayBlocks.map((b) => {
+              const height = Math.max(24, y(b.endsAt) - y(b.startsAt) - 3);
+              return (
+                <TaskBlock
+                  key={b.id}
+                  title={b.title}
+                  timeLabel={formatTimeRange(b.startsAt, b.endsAt, timeZone)}
+                  color={b.color}
+                  completed={b.status === "done"}
+                  compact={height < 50}
+                  onClick={() => onOpen(b)}
+                  className="absolute right-0 left-[3.25rem] w-auto"
+                  style={{ top: y(b.startsAt) + 1, height }}
+                />
+              );
+            })}
 
-          {isToday && nowMin >= DAY_START && nowMin <= DAY_END && (
-            <div
-              aria-label={`Now, ${formatClock(nowMin)}`}
-              className="absolute right-0 left-[2.75rem] z-10 flex items-center"
-              style={{ top: y(nowMin) - 4 }}
-            >
-              <span className="size-2 rounded-full bg-danger" />
-              <span className="h-0.5 flex-1 bg-danger" />
-            </div>
-          )}
-        </motion.div>
-      </AnimatePresence>
-      <BlockDetailSheet {...detail.sheetProps} />
+            {isToday && now >= start && now < end && (
+              <div
+                aria-label={`Now, ${formatTimeRange(now, now, timeZone)}`}
+                className="absolute right-0 left-[2.75rem] z-10 flex items-center"
+                style={{ top: y(now) - 4 }}
+              >
+                <span className="size-2 rounded-full bg-danger" />
+                <span className="h-0.5 flex-1 bg-danger" />
+              </div>
+            )}
+          </motion.div>
+        </AnimatePresence>
+      </div>
     </Card>
   );
 }

@@ -5,17 +5,16 @@ import { AnimatePresence, motion } from "motion/react";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState, useSyncExternalStore, type ReactNode } from "react";
 import { saveOnboardingAction } from "@/app/actions/onboarding";
+import { uploadAvatarAction } from "@/app/actions/profile";
+import { PlaceFields } from "@/components/planner/place-fields";
+import { AvatarPicker } from "@/components/ui/avatar-picker";
 import { Button } from "@/components/ui/button";
-import { Chip } from "@/components/ui/chip";
-import { SegmentedControl } from "@/components/ui/segmented-control";
 import { fireConfetti } from "@/lib/confetti";
 import { fluid } from "@/lib/design/motion";
-import { formatClock, formatDuration } from "@/lib/time";
 import { useNow } from "@/lib/use-now";
 
-const START_OPTIONS = [6, 7, 8, 9, 10].map((h) => h * 60);
-const END_OPTIONS = [20, 21, 22, 23, 24].map((h) => h * 60);
-const STEPS = ["name", "zone", "hours", "done"] as const;
+const STEPS = ["name", "photo", "where", "done"] as const;
+const QUESTIONS = 3;
 
 /** The browser's time zone, read only on the client (the server can't know it). */
 function useDetectedTimeZone(): string | null {
@@ -27,24 +26,28 @@ function useDetectedTimeZone(): string | null {
 }
 
 /**
- * ONBOARDING: three questions, then a celebration.
+ * ONBOARDING: three quick questions, then a celebration.
  *
- * Everything the auto-planner needs to place tasks sensibly: your name, your
- * time zone (so "6 PM" means 6 PM where you are), and the hours it's allowed
- * to schedule in. Steps slide left/right on the fluid spring; Back keeps your
- * answers. Nothing is saved until you finish.
+ * 1. Your name (how friends see you).
+ * 2. A profile photo, optional. Skip it and you get your initials instead.
+ * 3. Where you are: the time zone (so "6 PM" means 6 PM where you are) and,
+ *    optionally, your city and state for "people near you" suggestions.
+ *
+ * There are no planning hours: the planner can use all 24 hours of the day.
+ * Steps slide left/right on the fluid spring; Back keeps your answers.
+ * Nothing is saved until you finish.
  */
-export function OnboardingScreen({ defaultName }: { defaultName: string }) {
+export function OnboardingScreen({ defaultName, remote }: { defaultName: string; remote: boolean }) {
   const router = useRouter();
   const now = useNow();
   const detected = useDetectedTimeZone();
   const [step, setStep] = useState(0);
   const [direction, setDirection] = useState(1);
   const [name, setName] = useState(defaultName === "You" ? "" : defaultName);
+  const [photo, setPhoto] = useState<{ blob: Blob; url: string } | null>(null);
   const [zoneChoice, setZoneChoice] = useState<string | null>(null);
-  const [start, setStart] = useState(7 * 60);
-  const [end, setEnd] = useState(22 * 60);
-  const [weekStartsOn, setWeekStartsOn] = useState<"1" | "7">("1");
+  const [city, setCity] = useState("");
+  const [region, setRegion] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -57,6 +60,13 @@ export function OnboardingScreen({ defaultName }: { defaultName: string }) {
     if (STEPS[step] === "done") fireConfetti(140);
   }, [step]);
 
+  // Free the preview image's memory when it's replaced or we leave.
+  useEffect(() => {
+    return () => {
+      if (photo) URL.revokeObjectURL(photo.url);
+    };
+  }, [photo]);
+
   function go(delta: number) {
     setError(null);
     setDirection(delta);
@@ -68,13 +78,14 @@ export function OnboardingScreen({ defaultName }: { defaultName: string }) {
     setError(null);
     let result;
     try {
-      result = await saveOnboardingAction({
-        displayName: name,
-        timeZone,
-        dayStartMinute: start,
-        dayEndMinute: end,
-        weekStartsOn: weekStartsOn === "1" ? 1 : 7,
-      });
+      result = await saveOnboardingAction({ displayName: name, timeZone, city, region });
+      // The photo is a nice-to-have: if it fails, onboarding still succeeds
+      // and they can add it later in Settings.
+      if (result.ok && remote && photo) {
+        const form = new FormData();
+        form.append("file", photo.blob, "avatar.jpg");
+        await uploadAvatarAction(form).catch(() => null);
+      }
     } catch {
       result = { ok: false as const, error: "Couldn't reach the server. Check your connection and try again." };
     }
@@ -103,8 +114,15 @@ export function OnboardingScreen({ defaultName }: { defaultName: string }) {
         >
           <ArrowLeft size={22} />
         </button>
-        <div className="flex flex-1 gap-1.5" role="progressbar" aria-valuemin={1} aria-valuemax={3} aria-valuenow={Math.min(step + 1, 3)} aria-label="Setup progress">
-          {[0, 1, 2].map((i) => (
+        <div
+          className="flex flex-1 gap-1.5"
+          role="progressbar"
+          aria-valuemin={1}
+          aria-valuemax={QUESTIONS}
+          aria-valuenow={Math.min(step + 1, QUESTIONS)}
+          aria-label="Setup progress"
+        >
+          {Array.from({ length: QUESTIONS }, (_, i) => (
             <div key={i} className="h-1.5 flex-1 overflow-hidden rounded-full bg-fill">
               <motion.div
                 className="h-full rounded-full bg-tint"
@@ -144,8 +162,29 @@ export function OnboardingScreen({ defaultName }: { defaultName: string }) {
               </Step>
             )}
 
-            {STEPS[step] === "zone" && (
-              <Step emoji="🌎" title="Where are you?" subtitle="So 6 PM on your schedule means 6 PM where you are, even when the clocks change.">
+            {STEPS[step] === "photo" && (
+              <Step emoji="📸" title="Add a profile photo" subtitle="Optional. Skip it and friends see your initials instead.">
+                <AvatarPicker
+                  name={name}
+                  color="blue"
+                  src={photo?.url ?? null}
+                  onPicked={(blob) => setPhoto({ blob, url: URL.createObjectURL(blob) })}
+                />
+                {photo && (
+                  <Button variant="plain" size="sm" className="mx-auto mt-2 flex" onClick={() => setPhoto(null)}>
+                    Use my initials instead
+                  </Button>
+                )}
+                {!remote && photo && (
+                  <p className="mt-2 text-center text-footnote text-secondary-label">
+                    Demo mode: the photo stays on this screen only.
+                  </p>
+                )}
+              </Step>
+            )}
+
+            {STEPS[step] === "where" && (
+              <Step emoji="🌎" title="Where are you?" subtitle="Your time zone keeps your schedule right. Your city helps you find friends nearby.">
                 <label className="glass-card flex items-center gap-3 rounded-2xl px-4 py-3">
                   <Globe aria-hidden size={20} className="shrink-0 text-tint" />
                   <span className="sr-only">Time zone</span>
@@ -164,53 +203,21 @@ export function OnboardingScreen({ defaultName }: { defaultName: string }) {
                   </select>
                 </label>
                 {localTime && (
-                  <p className="mt-3 px-1 text-subhead text-secondary-label">
+                  <p className="mb-5 mt-2 px-1 text-subhead text-secondary-label">
                     It&apos;s <span className="font-semibold text-label">{localTime}</span> there right now.
                   </p>
                 )}
-              </Step>
-            )}
-
-            {STEPS[step] === "hours" && (
-              <Step emoji="⏰" title="When can we plan tasks?" subtitle="The planner only schedules work inside these hours.">
-                <ChipRow label="Start from">
-                  {START_OPTIONS.map((m) => (
-                    <Chip key={m} group="start" selected={start === m} onClick={() => setStart(m)}>
-                      {formatClock(m)}
-                    </Chip>
-                  ))}
-                </ChipRow>
-                <ChipRow label="Wrap up by">
-                  {END_OPTIONS.map((m) => (
-                    <Chip key={m} group="end" selected={end === m} onClick={() => setEnd(m)}>
-                      {m === 1440 ? "Midnight" : formatClock(m)}
-                    </Chip>
-                  ))}
-                </ChipRow>
-                <p className="mt-1 px-1 text-subhead text-secondary-label">
-                  That&apos;s up to <span className="font-semibold text-label">{formatDuration(end - start)}</span> a day.
-                  Your classes and work still come first.
+                <PlaceFields city={city} region={region} onCity={setCity} onRegion={setRegion} />
+                <p className="mt-2 px-1 text-footnote text-secondary-label">
+                  Optional. Only used to suggest people near you, and you can turn that off in Settings.
                 </p>
-                <div className="mt-6">
-                  <span className="px-1 text-footnote font-medium text-secondary-label">Week starts on</span>
-                  <SegmentedControl
-                    label="Week starts on"
-                    className="mt-2"
-                    value={weekStartsOn}
-                    onChange={setWeekStartsOn}
-                    options={[
-                      { value: "1", label: "Monday" },
-                      { value: "7", label: "Sunday" },
-                    ]}
-                  />
-                </div>
               </Step>
             )}
 
             {STEPS[step] === "done" && (
               <Step emoji="🎉" title={`You're all set, ${firstName}!`} subtitle="Add what you need to do and we'll find the time for it.">
                 <Button size="lg" className="rounded-full" onClick={() => router.push("/today")}>
-                  <Sparkles aria-hidden size={18} /> Plan my week
+                  <Sparkles aria-hidden size={18} /> Let&apos;s go
                 </Button>
               </Step>
             )}
@@ -237,13 +244,14 @@ export function OnboardingScreen({ defaultName }: { defaultName: string }) {
             size="lg"
             className="mt-8 rounded-full"
             disabled={!canContinue || saving}
-            onClick={() => (STEPS[step] === "hours" ? void finish() : go(1))}
+            onClick={() => (STEPS[step] === "where" ? void finish() : go(1))}
           >
             {saving ? (
               <Loader2 aria-hidden size={20} className="animate-spin" />
             ) : (
               <>
-                {STEPS[step] === "hours" ? "Finish" : "Continue"} <ArrowRight aria-hidden size={18} />
+                {STEPS[step] === "where" ? "Finish" : STEPS[step] === "photo" && !photo ? "Skip for now" : "Continue"}{" "}
+                <ArrowRight aria-hidden size={18} />
               </>
             )}
           </Button>
@@ -262,15 +270,6 @@ function Step({ emoji, title, subtitle, children }: { emoji: string; title: stri
       <h1 className="text-large-title">{title}</h1>
       <p className="mb-7 mt-2 text-body text-secondary-label">{subtitle}</p>
       {children}
-    </div>
-  );
-}
-
-function ChipRow({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <div className="mb-4">
-      <span className="px-1 text-footnote font-medium text-secondary-label">{label}</span>
-      <div className="-mx-5 mt-2 flex gap-2 overflow-x-auto px-5 pb-1 [scrollbar-width:none]">{children}</div>
     </div>
   );
 }

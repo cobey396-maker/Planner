@@ -1,27 +1,57 @@
+import { TabTour } from "@/components/planner/tab-tour";
 import { TabBar } from "@/components/ui/tab-bar";
 import { AccountProvider } from "@/lib/auth/account-context";
 import { getAccount } from "@/lib/auth/session";
-import { PlannerProvider } from "@/lib/planner/store";
+import { loadPlannerData } from "@/lib/planner/load";
+import { EMPTY_PLANNER, PlannerProvider, type InitialPlannerData } from "@/lib/planner/store";
+import { createClient } from "@/lib/supabase/server";
 
 /**
  * Shared shell for the five main tabs. "(tabs)" in parentheses is a Next.js
- * ROUTE GROUP: it organizes files without adding "/tabs" to the URL, so the
- * pages are still /today, /week, etc.
+ * ROUTE GROUP: it organizes files without adding "/tabs" to the URL.
  *
- * A layout is NOT re-mounted when you navigate between its pages. That gives
- * us two things for free: planner state survives tab switches, and the tab
- * bar's glass lens can animate from one tab to the next.
+ * A layout is NOT re-mounted when you navigate between its pages, so the
+ * planner state survives tab switches and the tab bar's lens can animate.
  *
- * It's a Server Component, so it can read the verified account and pass it
- * down to client components (Settings) through AccountProvider.
+ * As a Server Component it loads the signed-in user's real data (in
+ * parallel, under row-level security) and hands it to the client store.
+ * Without an account (demo mode / "Explore") everything starts empty.
  */
 export default async function TabsLayout({ children }: { children: React.ReactNode }) {
   const account = await getAccount();
+  let initial: InitialPlannerData = EMPTY_PLANNER;
+
+  if (account) {
+    const supabase = await createClient();
+    const data = await loadPlannerData(supabase!, account.id);
+    initial = {
+      timeZone: data.settings.timeZone,
+      weekStartsOn: data.settings.weekStartsOn,
+      profile: data.profile,
+      blocks: data.blocks,
+      pointsTotal: data.pointsTotal,
+      friends: data.friends,
+      requests: data.requests,
+      suggestions: data.suggestions,
+      inviteCode: data.inviteCode,
+      hangouts: data.hangouts,
+      hasAcceptedHangout: data.hasAcceptedHangout,
+      prefs: {
+        notifyUpcoming: data.settings.notifyUpcoming,
+        notifyMissed: data.settings.notifyMissed,
+        notifyFriends: data.settings.notifyFriends,
+        reminderLeadMinutes: data.settings.reminderLeadMinutes,
+        discoverable: data.settings.discoverable,
+      },
+    };
+  }
+
   return (
     <AccountProvider account={account}>
-      <PlannerProvider>
+      <PlannerProvider initial={initial} mode={account ? "remote" : "local"}>
         {children}
         <TabBar />
+        <TabTour accountTourDone={account ? account.tourDone : null} />
       </PlannerProvider>
     </AccountProvider>
   );

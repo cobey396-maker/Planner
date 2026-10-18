@@ -19,7 +19,7 @@ const fake = {
   from: vi.fn(),
 };
 let configured = true;
-const cookieJar = { delete: vi.fn() };
+const cookieJar = { delete: vi.fn(), get: vi.fn() };
 
 vi.mock("@/lib/supabase/server", () => ({ createClient: async () => (configured ? fake : null) }));
 vi.mock("next/headers", () => ({
@@ -127,9 +127,8 @@ describe("saveOnboardingAction", () => {
   const answers = {
     displayName: "Cobey",
     timeZone: "America/Chicago",
-    dayStartMinute: 8 * 60,
-    dayEndMinute: 22 * 60,
-    weekStartsOn: 1 as const,
+    city: "  Austin ",
+    region: "Texas",
   };
 
   function tableMock() {
@@ -150,9 +149,14 @@ describe("saveOnboardingAction", () => {
     fake.auth.getClaims.mockResolvedValue({ data: { claims: { sub: "user-1" } } });
     fake.auth.updateUser.mockResolvedValue({ error: null });
     expect(await saveOnboardingAction(answers)).toEqual({ ok: true, next: "/today" });
-    expect(calls.profiles).toEqual({ values: { display_name: "Cobey" }, col: "id", id: "user-1" });
+    expect(calls.profiles).toEqual({
+      values: { display_name: "Cobey", city: "Austin", region: "Texas" },
+      col: "id",
+      id: "user-1",
+    });
+    // Planning is always 24/7: midnight to midnight.
     expect(calls.user_settings).toEqual({
-      values: { time_zone: "America/Chicago", day_start_minute: 480, day_end_minute: 1320, week_starts_on: 1 },
+      values: { time_zone: "America/Chicago", day_start_minute: 0, day_end_minute: 1440 },
       col: "user_id",
       id: "user-1",
     });
@@ -160,14 +164,22 @@ describe("saveOnboardingAction", () => {
     expect(fake.auth.refreshSession).toHaveBeenCalled();
   });
 
-  it("rejects a made-up time zone and a too-short day", async () => {
+  it("city and state are optional: blanks are saved as null", async () => {
+    const calls = tableMock();
+    fake.auth.getClaims.mockResolvedValue({ data: { claims: { sub: "user-1" } } });
+    fake.auth.updateUser.mockResolvedValue({ error: null });
+    expect(await saveOnboardingAction({ ...answers, city: "   ", region: "" })).toMatchObject({ ok: true });
+    expect(calls.profiles).toMatchObject({ values: { city: null, region: null } });
+  });
+
+  it("rejects a made-up time zone and an over-long city", async () => {
     expect(await saveOnboardingAction({ ...answers, timeZone: "Narnia/Cair" })).toMatchObject({
       ok: false,
       fieldErrors: { timeZone: expect.any(String) },
     });
-    expect(await saveOnboardingAction({ ...answers, dayStartMinute: 600, dayEndMinute: 660 })).toMatchObject({
+    expect(await saveOnboardingAction({ ...answers, city: "x".repeat(61) })).toMatchObject({
       ok: false,
-      fieldErrors: { dayEndMinute: expect.stringMatching(/3 hours/) },
+      fieldErrors: { city: expect.any(String) },
     });
     expect(fake.from).not.toHaveBeenCalled();
   });

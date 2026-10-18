@@ -16,15 +16,15 @@ app for teens and young adults, with a native iOS "liquid glass" feel.
 | Screen | What it does |
 | --- | --- |
 | **Sign up** (`/`) | Create an account or sign in with Supabase Auth: validated on client and server (zod), password strength meter, email confirmation, password reset, and "Explore with sample data". Apple/Google buttons are placeholders. |
-| **Onboarding** (`/onboarding`) | Name, time zone (auto-detected), planning hours and week start, then confetti. Saved to your profile and settings. |
-| **Today** | Progress ring, "Happening now" card, the day as a timeline with free gaps. **+** opens the Add Task sheet, which drops the task into the first free slot. Tap a block for details (complete / delete). |
-| **Week** | Hours planned per day (bar chart), a day picker, and the chosen day as an hour grid. |
-| **Streaks** | Streak and points (they update as you complete blocks), weekly recap ("You hit 82% of your plan"), badges. |
-| **Friends** | Friend requests, invite link, and **free time together**: only busy/free spans are shown, never event names. Tap a shared slot to send an invite. |
-| **Settings** | Theme, notifications, schedule preferences, and a link to the design system. |
+| **Onboarding** (`/onboarding`) | Name, optional profile photo (initials if skipped), time zone (auto-detected), optional city and state, then confetti. Planning is 24/7, so there are no hours to pick. |
+| **Today** | Only your own tasks for today. Empty day: "No tasks for today 😊". Otherwise a progress ring, "Happening now", and a timeline with free gaps. **+** adds a task (auto-placed in the first open time, or at a time you pick). Tap a block to complete or delete it. |
+| **Week** | **+** to add tasks, week navigation, hours planned per day (computed the same way as the grid, so they always match), and a 24-hour day grid with a "now" line. |
+| **Streaks** | Starts at 0 streak / 0 points. 10 points per finished block, purple flame at a 10+ day streak, weekly recap from your real blocks, and badges that start locked and unlock by rule. |
+| **Friends** | No starter friends. Requests, hangout invites, your invite link, **free time together** (busy/free only, never event names), and "People you may know": friends of friends, then people in your city. |
+| **Settings** | Edit profile (photo, name, city/state), theme, **email** notifications, week start, time zone, "Suggest me to others", sign out. |
 | **Design system** (`/design`) | Split into Colors & glass, Typography, Components, and States & feedback. |
 
-The screens still use sample data in the browser (`lib/planner/mock.ts`). The database they will use is ready: see [DATABASE.md](DATABASE.md).
+New accounts get a one-time tour of Today, Week, Streaks and Friends. Signed in, every screen reads and writes your Supabase database (see [DATABASE.md](DATABASE.md)). In demo mode (no Supabase keys) the same features run in the browser, starting empty.
 
 ## Run it
 

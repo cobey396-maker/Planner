@@ -98,6 +98,11 @@ model Profile {
   avatarColor TaskColor @default(blue) @map("avatar_color")
   /// Secret code in your shareable friend link. Only you can read it.
   inviteCode  String    @unique @default(dbgenerated("substr(replace((gen_random_uuid())::text, '-'::text, ''::text), 1, 12)")) @map("invite_code") @db.VarChar(12)
+  /// Public URL of the profile photo in Supabase Storage (null = initials).
+  avatarUrl   String?   @map("avatar_url") @db.VarChar(500)
+  /// Where they live, for "people near you" friend suggestions.
+  city        String?   @db.VarChar(60)
+  region      String?   @db.VarChar(60)
   createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
 
   settings         UserSettings?
@@ -121,14 +126,17 @@ model UserSettings {
   /// ISO weekday the week starts on: 1 = Monday … 7 = Sunday.
   weekStartsOn        Int      @default(1) @map("week_starts_on") @db.SmallInt
   /// The planner only places tasks between these local times (minutes).
-  dayStartMinute      Int      @default(420) @map("day_start_minute") @db.SmallInt
-  dayEndMinute        Int      @default(1380) @map("day_end_minute") @db.SmallInt
+  /// The planner may use the whole day (24/7) unless the user narrows it.
+  dayStartMinute      Int      @default(0) @map("day_start_minute") @db.SmallInt
+  dayEndMinute        Int      @default(1440) @map("day_end_minute") @db.SmallInt
   theme               Theme    @default(system)
   notifyUpcoming      Boolean  @default(true) @map("notify_upcoming")
   notifyMissed        Boolean  @default(true) @map("notify_missed")
   notifyFriends       Boolean  @default(true) @map("notify_friends")
   notifyRecap         Boolean  @default(false) @map("notify_recap")
   reminderLeadMinutes Int      @default(15) @map("reminder_lead_minutes") @db.SmallInt
+  /// Show me in "people near you" suggestions for others in my city.
+  discoverable        Boolean  @default(true)
   updatedAt           DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   profile Profile @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -188,16 +196,19 @@ model Task {
 
 /// A scheduled work session for a task: what you see on Today and Week.
 model Block {
-  id          String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  userId      String      @map("user_id") @db.Uuid
-  taskId      String      @map("task_id") @db.Uuid
-  startsAt    DateTime    @map("starts_at") @db.Timestamptz(6)
-  endsAt      DateTime    @map("ends_at") @db.Timestamptz(6)
-  status      BlockStatus @default(planned)
+  id             String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId         String      @map("user_id") @db.Uuid
+  taskId         String      @map("task_id") @db.Uuid
+  startsAt       DateTime    @map("starts_at") @db.Timestamptz(6)
+  endsAt         DateTime    @map("ends_at") @db.Timestamptz(6)
+  status         BlockStatus @default(planned)
   /// The user dragged it here: the planner must not move it (Phase 6).
-  pinned      Boolean     @default(false)
-  completedAt DateTime?   @map("completed_at") @db.Timestamptz(6)
-  createdAt   DateTime    @default(now()) @map("created_at") @db.Timestamptz(6)
+  pinned         Boolean     @default(false)
+  completedAt    DateTime?   @map("completed_at") @db.Timestamptz(6)
+  /// When the "starting soon" / "missed" emails went out (null = not yet).
+  reminderSentAt DateTime?   @map("reminder_sent_at") @db.Timestamptz(6)
+  missedSentAt   DateTime?   @map("missed_sent_at") @db.Timestamptz(6)
+  createdAt      DateTime    @default(now()) @map("created_at") @db.Timestamptz(6)
 
   user   Profile       @relation(fields: [userId], references: [id], onDelete: Cascade)
   task   Task          @relation(fields: [taskId], references: [id], onDelete: Cascade)

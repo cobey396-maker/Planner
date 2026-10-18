@@ -73,3 +73,20 @@ export function isValidTimeZone(tz: unknown): tz is string {
     return false;
   }
 }
+
+/** "6:00 PM" for an instant, shown in the given time zone. */
+export function formatTime(ms: number, timeZone: string): string {
+  return new Intl.DateTimeFormat(undefined, { timeZone, hour: "numeric", minute: "2-digit" }).format(ms);
+}
+
+/** "6:00 – 7:30 PM" for two instants in the given time zone. */
+export function formatTimeRange(start: number, end: number, timeZone: string): string {
+  return new Intl.DateTimeFormat(undefined, { timeZone, hour: "numeric", minute: "2-digit" }).formatRange(start, end);
+}
+
+/** A day key ("2026-10-14") as words, e.g. { weekday: "long", month: "long", day: "numeric" }. */
+export function formatDayKey(key: string, options: Intl.DateTimeFormatOptions): string {
+  const [y, m, d] = key.split("-").map(Number);
+  // Noon UTC of that date, formatted in UTC: always the right calendar day.
+  return new Intl.DateTimeFormat(undefined, { ...options, timeZone: "UTC" }).format(Date.UTC(y, m - 1, d, 12));
+}

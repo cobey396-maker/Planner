@@ -6,6 +6,8 @@ export type Account = {
   email: string;
   displayName: string;
   onboarded: boolean;
+  /** Has seen the tab tour. */
+  tourDone: boolean;
 };
 
 /**
@@ -26,5 +28,6 @@ export async function getAccount(): Promise<Account | null> {
     email: typeof claims.email === "string" ? claims.email : "",
     displayName: typeof meta.display_name === "string" && meta.display_name ? meta.display_name : "You",
     onboarded: meta.onboarded === true,
+    tourDone: meta.tour_done === true,
   };
 }

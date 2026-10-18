@@ -1,59 +1,86 @@
 "use client";
 
-import { Bell, CalendarClock, FileText, Globe, Moon, Palette, Shield, Sunrise, Users } from "lucide-react";
+import { Bell, CalendarClock, Eye, FileText, Globe, Mail, MapPin, Moon, Palette, Pencil, Shield, Users } from "lucide-react";
 import { motion } from "motion/react";
+import Link from "next/link";
 import { useState } from "react";
+import { signOutAction } from "@/app/actions/auth";
+import { removeAvatarAction, updateProfileAction, uploadAvatarAction } from "@/app/actions/profile";
+import { PlaceFields } from "@/components/planner/place-fields";
 import { useTheme } from "@/components/providers";
 import { Avatar } from "@/components/ui/avatar";
+import { AvatarPicker } from "@/components/ui/avatar-picker";
 import { Button } from "@/components/ui/button";
 import { Card, ListGroup, ListRow, RowIcon } from "@/components/ui/card";
 import { Chip } from "@/components/ui/chip";
 import { LargeTitlePage } from "@/components/ui/large-title-page";
 import { SegmentedControl } from "@/components/ui/segmented-control";
+import { Sheet } from "@/components/ui/sheet";
 import { Switch } from "@/components/ui/switch";
-import { signOutAction } from "@/app/actions/auth";
+import { useToast } from "@/components/ui/toast";
 import { useAccount } from "@/lib/auth/account-context";
 import { clearProfile, useProfile } from "@/lib/auth/profile";
 import { useEntrance } from "@/lib/design/entrance";
 import { fadeUp, stagger } from "@/lib/design/motion";
+import { usePlanner, type Prefs } from "@/lib/planner/store";
 import type { ThemePreference } from "@/lib/theme";
-import { formatClock } from "@/lib/time";
-import { useNow } from "@/lib/use-now";
 
 const LEAD_TIMES = [5, 10, 15, 30];
 
 /**
- * SETTINGS: profile, appearance, notifications and schedule preferences.
- * Theme is fully working now. The other preferences are local for the moment
- * and get saved to your profile in Phase 10 (with real push notifications).
+ * SETTINGS: profile (photo, name, city), appearance, email notifications and
+ * privacy. Planning is 24/7, so there are no "planning hours" to set.
+ * Notifications go to your email until there's an installed app.
  */
 export function SettingsScreen() {
   const entrance = useEntrance();
-  const now = useNow();
+  const toast = useToast();
   const { preference, setPreference } = useTheme();
   const account = useAccount();
   const localProfile = useProfile();
-  // A real account wins; otherwise the demo-mode name saved in this browser.
-  const profile = account ? { name: account.displayName, email: account.email } : localProfile;
-  const [notify, setNotify] = useState({ upcoming: true, missed: true, friends: true, recap: false });
-  const [lead, setLead] = useState(15);
-  const [weekStart, setWeekStart] = useState<"mon" | "sun">("mon");
+  const { mode, profile, prefs, setPrefs, weekStartsOn, setWeekStartsOn, timeZone } = usePlanner();
+  const [editing, setEditing] = useState(false);
+  // Bumped on each open so the edit form starts from the saved profile.
+  const [editKey, setEditKey] = useState(0);
 
-  // The browser knows the user's IANA time zone, e.g. "America/Chicago".
-  const timeZone = now ? Intl.DateTimeFormat().resolvedOptions().timeZone : "…";
+  const name = account ? (profile?.displayName ?? account.displayName) : (localProfile?.name ?? "Guest");
+  const where = profile ? [profile.city, profile.region].filter(Boolean).join(", ") : "";
+
+  async function save(patch: Partial<Prefs>) {
+    const res = await setPrefs(patch);
+    if (!res.ok) toast(res.error);
+  }
 
   return (
     <LargeTitlePage title="Settings">
       <motion.div variants={stagger} initial={entrance} animate="animate" className="flex flex-col gap-7">
         <motion.div variants={fadeUp}>
           <Card className="flex items-center gap-4">
-            <Avatar name={profile?.name || "Guest"} color="blue" size={60} />
+            <Avatar name={name} color={profile?.avatarColor ?? "blue"} src={profile?.avatarUrl} size={60} />
             <div className="min-w-0 flex-1">
-              <div className="truncate text-title3">{profile?.name || "Guest"}</div>
+              <div className="truncate text-title3">{name}</div>
               <div className="truncate text-subhead text-secondary-label">
-                {account ? account.email : profile ? `${profile.email} · demo` : "Exploring with sample data"}
+                {account ? account.email : localProfile ? `${localProfile.email} · demo` : "Exploring without an account"}
               </div>
+              {where && (
+                <div className="mt-0.5 flex items-center gap-1 truncate text-footnote text-secondary-label">
+                  <MapPin aria-hidden size={12} /> {where}
+                </div>
+              )}
             </div>
+            {mode === "remote" && (
+              <Button
+                variant="tinted"
+                size="icon"
+                aria-label="Edit profile"
+                onClick={() => {
+                  setEditKey((k) => k + 1);
+                  setEditing(true);
+                }}
+              >
+                <Pencil size={18} />
+              </Button>
+            )}
           </Card>
         </motion.div>
 
@@ -81,80 +108,72 @@ export function SettingsScreen() {
         </motion.div>
 
         <motion.div variants={fadeUp}>
-          <ListGroup header="Notifications" footer="Reminders arrive as push notifications once the app is installed.">
-            <ListRow
-              icon={
-                <RowIcon color="var(--task-red)">
-                  <Bell size={17} />
-                </RowIcon>
-              }
-              title="Upcoming blocks"
-              trailing={
-                <Switch label="Upcoming blocks" checked={notify.upcoming} onChange={(v) => setNotify({ ...notify, upcoming: v })} />
-              }
-            />
-            {notify.upcoming && (
-              <div className="flex items-center gap-2 overflow-x-auto px-4 py-3 [scrollbar-width:none]">
-                <span className="mr-1 shrink-0 text-subhead text-secondary-label">Remind me</span>
-                {LEAD_TIMES.map((m) => (
-                  <Chip key={m} group="lead" selected={lead === m} onClick={() => setLead(m)}>
-                    {m} min
-                  </Chip>
-                ))}
-              </div>
-            )}
-            <ListRow
-              icon={
-                <RowIcon color="var(--task-orange)">
-                  <CalendarClock size={17} />
-                </RowIcon>
-              }
-              title="Missed tasks"
-              detail="We'll offer to reschedule"
-              trailing={
-                <Switch label="Missed tasks" checked={notify.missed} onChange={(v) => setNotify({ ...notify, missed: v })} />
-              }
-            />
-            <ListRow
-              icon={
-                <RowIcon color="var(--task-green)">
-                  <Users size={17} />
-                </RowIcon>
-              }
-              title="Friend invites"
-              trailing={
-                <Switch label="Friend invites" checked={notify.friends} onChange={(v) => setNotify({ ...notify, friends: v })} />
-              }
-            />
-            <ListRow
-              icon={
-                <RowIcon color="var(--task-purple)">
-                  <Sunrise size={17} />
-                </RowIcon>
-              }
-              title="Sunday recap"
-              trailing={
-                <Switch label="Sunday recap" checked={notify.recap} onChange={(v) => setNotify({ ...notify, recap: v })} />
-              }
-            />
-          </ListGroup>
+          {prefs && account ? (
+            <ListGroup
+              header="Email notifications"
+              footer={`Sent to ${account.email}. Push notifications come with the installed app.`}
+            >
+              <ListRow
+                icon={
+                  <RowIcon color="var(--task-red)">
+                    <Bell size={17} />
+                  </RowIcon>
+                }
+                title="Upcoming blocks"
+                trailing={
+                  <Switch label="Upcoming blocks" checked={prefs.notifyUpcoming} onChange={(v) => void save({ notifyUpcoming: v })} />
+                }
+              />
+              {prefs.notifyUpcoming && (
+                <div className="flex items-center gap-2 overflow-x-auto px-4 py-3 [scrollbar-width:none]">
+                  <span className="mr-1 shrink-0 text-subhead text-secondary-label">Email me</span>
+                  {LEAD_TIMES.map((m) => (
+                    <Chip key={m} group="lead" selected={prefs.reminderLeadMinutes === m} onClick={() => void save({ reminderLeadMinutes: m })}>
+                      {m} min before
+                    </Chip>
+                  ))}
+                </div>
+              )}
+              <ListRow
+                icon={
+                  <RowIcon color="var(--task-orange)">
+                    <CalendarClock size={17} />
+                  </RowIcon>
+                }
+                title="Missed blocks"
+                detail="When a block ends unfinished"
+                trailing={<Switch label="Missed blocks" checked={prefs.notifyMissed} onChange={(v) => void save({ notifyMissed: v })} />}
+              />
+              <ListRow
+                icon={
+                  <RowIcon color="var(--task-green)">
+                    <Users size={17} />
+                  </RowIcon>
+                }
+                title="Friend requests"
+                trailing={
+                  <Switch label="Friend requests" checked={prefs.notifyFriends} onChange={(v) => void save({ notifyFriends: v })} />
+                }
+              />
+            </ListGroup>
+          ) : (
+            <ListGroup header="Email notifications">
+              <ListRow
+                icon={
+                  <RowIcon color="var(--task-red)">
+                    <Mail size={17} />
+                  </RowIcon>
+                }
+                title="Reminders by email"
+                detail="Create an account to get them"
+                href="/"
+              />
+            </ListGroup>
+          )}
         </motion.div>
 
         <motion.div variants={fadeUp}>
-          <ListGroup header="Schedule">
-            <ListRow
-              icon={
-                <RowIcon color="var(--task-blue)">
-                  <CalendarClock size={17} />
-                </RowIcon>
-              }
-              title="Planning hours"
-              trailing={
-                <span className="text-secondary-label">
-                  {now ? `${formatClock(7 * 60)} – ${formatClock(23 * 60)}` : "…"}
-                </span>
-              }
-            />
+          <ListGroup header="Calendar">
             <div className="flex items-center gap-3 px-4 py-2.5">
               <RowIcon color="var(--task-teal)">
                 <CalendarClock size={17} />
@@ -163,8 +182,8 @@ export function SettingsScreen() {
               <SegmentedControl
                 label="Week starts on"
                 className="w-40"
-                value={weekStart}
-                onChange={setWeekStart}
+                value={weekStartsOn === 7 ? "sun" : "mon"}
+                onChange={(v) => void setWeekStartsOn(v === "sun" ? 7 : 1)}
                 options={[
                   { value: "mon", label: "Mon" },
                   { value: "sun", label: "Sun" },
@@ -178,10 +197,28 @@ export function SettingsScreen() {
                 </RowIcon>
               }
               title="Time zone"
-              trailing={<span className="max-w-40 truncate text-secondary-label">{timeZone}</span>}
+              trailing={<span className="max-w-44 truncate text-secondary-label">{timeZone.replaceAll("_", " ")}</span>}
             />
           </ListGroup>
         </motion.div>
+
+        {prefs && (
+          <motion.div variants={fadeUp}>
+            <ListGroup header="Privacy" footer="Lets friends of friends and people in your city see you in “People you may know”.">
+              <ListRow
+                icon={
+                  <RowIcon color="var(--task-purple)">
+                    <Eye size={17} />
+                  </RowIcon>
+                }
+                title="Suggest me to others"
+                trailing={
+                  <Switch label="Suggest me to others" checked={prefs.discoverable} onChange={(v) => void save({ discoverable: v })} />
+                }
+              />
+            </ListGroup>
+          </motion.div>
+        )}
 
         <motion.div variants={fadeUp}>
           <ListGroup header="About">
@@ -202,7 +239,7 @@ export function SettingsScreen() {
                 </RowIcon>
               }
               title="Privacy policy"
-              trailing={<span className="text-footnote text-tertiary-label">Phase 10</span>}
+              trailing={<span className="text-footnote text-tertiary-label">Coming soon</span>}
             />
             <ListRow
               icon={
@@ -211,14 +248,14 @@ export function SettingsScreen() {
                 </RowIcon>
               }
               title="Terms of service"
-              trailing={<span className="text-footnote text-tertiary-label">Phase 10</span>}
+              trailing={<span className="text-footnote text-tertiary-label">Coming soon</span>}
             />
           </ListGroup>
         </motion.div>
 
         <motion.div variants={fadeUp} className="flex flex-col items-center gap-2">
           <Button
-            variant={account || profile ? "danger" : "filled"}
+            variant={account || localProfile ? "danger" : "filled"}
             size="lg"
             onClick={() => {
               clearProfile();
@@ -226,11 +263,94 @@ export function SettingsScreen() {
               void signOutAction();
             }}
           >
-            {account || profile ? "Sign out" : "Create an account"}
+            {account || localProfile ? "Sign out" : "Create an account"}
           </Button>
-          <span className="text-caption text-tertiary-label">Auto-Planner 0.2 · preview build</span>
+          <span className="text-caption text-tertiary-label">Auto-Planner 0.3 · preview build</span>
         </motion.div>
       </motion.div>
+
+      {mode === "remote" && profile && <EditProfileSheet key={editKey} open={editing} onOpenChange={setEditing} />}
     </LargeTitlePage>
+  );
+}
+
+/** Change photo, name and city. */
+function EditProfileSheet({ open, onOpenChange }: { open: boolean; onOpenChange: (o: boolean) => void }) {
+  const toast = useToast();
+  const { profile, setProfile } = usePlanner();
+  const [name, setName] = useState(profile?.displayName ?? "");
+  const [city, setCity] = useState(profile?.city ?? "");
+  const [region, setRegion] = useState(profile?.region ?? "");
+  const [uploading, setUploading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  if (!profile) return null;
+
+  async function upload(photo: Blob) {
+    if (!profile) return;
+    setUploading(true);
+    const form = new FormData();
+    form.append("file", photo, "avatar.jpg");
+    const res = await uploadAvatarAction(form).catch(() => ({ ok: false as const, error: "Couldn't upload the photo." }));
+    setUploading(false);
+    if (res.ok) setProfile({ ...profile, avatarUrl: res.url });
+    toast(res.ok ? "Photo updated" : res.error);
+  }
+
+  async function removePhoto() {
+    if (!profile) return;
+    const res = await removeAvatarAction().catch(() => ({ ok: false as const, error: "Couldn't remove the photo." }));
+    if (res.ok) setProfile({ ...profile, avatarUrl: null });
+    toast(res.ok ? "Photo removed" : res.error);
+  }
+
+  async function save() {
+    if (!profile) return;
+    setSaving(true);
+    const res = await updateProfileAction({ displayName: name, city, region }).catch(() => ({
+      ok: false as const,
+      error: "Couldn't reach the server.",
+    }));
+    setSaving(false);
+    if (!res.ok) {
+      toast(res.error);
+      return;
+    }
+    setProfile({ ...profile, displayName: name.trim(), city: city.trim() || null, region: region || null });
+    toast("Profile saved");
+    onOpenChange(false);
+  }
+
+  return (
+    <Sheet open={open} onOpenChange={onOpenChange} title="Edit profile">
+      <div className="flex flex-col gap-5 pt-1">
+        <AvatarPicker name={name} color={profile.avatarColor} src={profile.avatarUrl} busy={uploading} onPicked={(p) => void upload(p)} />
+        {profile.avatarUrl && (
+          <Button variant="plain" size="sm" className="self-center" onClick={() => void removePhoto()}>
+            Remove photo
+          </Button>
+        )}
+        <label className="glass-card flex items-center rounded-2xl px-4 py-3">
+          <span className="sr-only">Name</span>
+          <input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            maxLength={50}
+            autoComplete="name"
+            placeholder="Your name"
+            className="min-w-0 flex-1 bg-transparent text-body outline-none placeholder:text-tertiary-label"
+          />
+        </label>
+        <PlaceFields city={city} region={region} onCity={setCity} onRegion={setRegion} />
+        <Button size="lg" disabled={saving || name.trim().length === 0} onClick={() => void save()}>
+          Save
+        </Button>
+        <p className="text-center text-footnote text-secondary-label">
+          Your city is only used to suggest people near you.{" "}
+          <Link href="/friends" className="text-tint" onClick={() => onOpenChange(false)}>
+            See suggestions
+          </Link>
+        </p>
+      </div>
+    </Sheet>
   );
 }

@@ -1,33 +1,35 @@
 "use client";
 
-import { useState } from "react";
-import { CheckCircle2, Circle, Lock, Sparkles, Trash2 } from "lucide-react";
+import { CheckCircle2, Circle, Sparkles, Trash2 } from "lucide-react";
+import { useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Sheet } from "@/components/ui/sheet";
 import { useToast } from "@/components/ui/toast";
 import { usePlanner } from "@/lib/planner/store";
-import type { Block } from "@/lib/planner/types";
-import { formatDuration, formatRange, WEEKDAY_SHORT } from "@/lib/time";
+import type { PlannedBlock } from "@/lib/planner/types";
+import { formatDayKey, formatDuration, formatTimeRange } from "@/lib/time";
+import { dayKey } from "@/lib/tz";
 
-/**
- * Task detail: what, when, and the two things you can do with a block today:
- * complete it, or (for tasks only) delete it. Fixed events are managed in
- * Phase 4, and moving blocks by drag arrives in Phase 6.
- */
+/** Task detail: when it is, mark it done (or undo), or delete it. */
 export function BlockDetailSheet({
-  block,
+  blockId,
   open,
   onOpenChange,
 }: {
   /** Kept after closing so the content doesn't vanish mid-animation. */
-  block: Block | null;
+  blockId: string | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
-  const onClose = () => onOpenChange(false);
-  const { completed, toggleComplete, removeBlock } = usePlanner();
+  const { blocks, setDone, deleteTask, timeZone } = usePlanner();
   const toast = useToast();
-  const done = block ? completed.has(block.id) : false;
+  // Remember the last block shown, so the sheet can animate closed after a delete.
+  const live = blocks.find((b) => b.id === blockId) ?? null;
+  const lastShown = useRef<PlannedBlock | null>(null);
+  if (live) lastShown.current = live;
+  const block = live ?? lastShown.current;
+  const done = block?.status === "done";
+  const close = () => onOpenChange(false);
 
   return (
     <Sheet
@@ -36,7 +38,7 @@ export function BlockDetailSheet({
       title={block?.title ?? ""}
       description={
         block
-          ? `${WEEKDAY_SHORT[block.day]} · ${formatRange(block.start, block.end)} · ${formatDuration(block.end - block.start)}`
+          ? `${formatDayKey(dayKey(block.startsAt, timeZone), { weekday: "long", month: "short", day: "numeric" })} · ${formatTimeRange(block.startsAt, block.endsAt, timeZone)} · ${formatDuration(Math.round((block.endsAt - block.startsAt) / 60000))}`
           : undefined
       }
     >
@@ -46,38 +48,35 @@ export function BlockDetailSheet({
             className="task-block flex items-center gap-3 rounded-block py-3 pl-4 pr-3 text-subhead"
             style={{ "--block": `var(--task-${block.color})` } as React.CSSProperties}
           >
-            {block.kind === "event" ? <Lock aria-hidden size={16} /> : <Sparkles aria-hidden size={16} />}
-            {block.kind === "event"
-              ? "Fixed event. The planner works around it."
-              : "Auto-planned. It moves if your day changes."}
+            <Sparkles aria-hidden size={16} />
+            {done ? "Done. Nice work!" : "Planned for you. Finish it to grow your streak."}
           </div>
 
           <Button
             size="lg"
             variant={done ? "tinted" : "filled"}
-            onClick={() => {
-              toggleComplete(block.id);
-              if (!done) toast("Nice! +10 points");
-              onClose();
+            onClick={async () => {
+              close();
+              const result = await setDone(block.id, !done);
+              if (!result.ok) toast(result.error);
+              else if (!done) toast("Nice! +10 points");
             }}
           >
             {done ? <Circle aria-hidden size={18} /> : <CheckCircle2 aria-hidden size={18} />}
             {done ? "Mark as not done" : "Mark complete"}
           </Button>
 
-          {block.kind === "task" && (
-            <Button
-              size="lg"
-              variant="danger"
-              onClick={() => {
-                removeBlock(block.id);
-                toast("Task deleted");
-                onClose();
-              }}
-            >
-              <Trash2 aria-hidden size={18} /> Delete task
-            </Button>
-          )}
+          <Button
+            size="lg"
+            variant="danger"
+            onClick={async () => {
+              close();
+              const result = await deleteTask(block.taskId);
+              toast(result.ok ? "Task deleted" : result.error);
+            }}
+          >
+            <Trash2 aria-hidden size={18} /> Delete task
+          </Button>
         </div>
       )}
     </Sheet>
@@ -86,13 +85,13 @@ export function BlockDetailSheet({
 
 /** State for "tap a block → open its detail sheet", shared by Today and Week. */
 export function useBlockDetail() {
-  const [selected, setSelected] = useState<Block | null>(null);
+  const [blockId, setBlockId] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
   return {
-    show: (block: Block) => {
-      setSelected(block);
+    show: (block: PlannedBlock) => {
+      setBlockId(block.id);
       setOpen(true);
     },
-    sheetProps: { block: selected, open, onOpenChange: setOpen },
+    sheetProps: { blockId, open, onOpenChange: setOpen },
   };
 }

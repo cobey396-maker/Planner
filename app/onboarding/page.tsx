@@ -11,5 +11,5 @@ export default async function OnboardingPage() {
   // The middleware already guards this page; checking again here is cheap
   // defense in depth (pages shouldn't assume middleware ran).
   if (isSupabaseConfigured() && !account) redirect("/");
-  return <OnboardingScreen defaultName={account?.displayName ?? ""} />;
+  return <OnboardingScreen defaultName={account?.displayName ?? ""} remote={account !== null} />;
 }

@@ -20,6 +20,8 @@ export type Visitor = {
 const APP_PREFIXES = ["/today", "/week", "/streaks", "/friends", "/settings"];
 
 export const DEMO_COOKIE = "planner-demo";
+/** A friend's invite code, remembered while a new person signs up. */
+export const PENDING_INVITE_COOKIE = "pending-invite";
 
 function isAppPath(path: string) {
   return APP_PREFIXES.some((p) => path === p || path.startsWith(p + "/"));
