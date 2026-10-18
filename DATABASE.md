@@ -105,6 +105,20 @@ erDiagram
 
 ## Set up Supabase (about 10 minutes)
 
+**Fastest (Windows):** after creating the project (step 1 below), run this from
+the Planner folder. It asks for your database password (hidden), writes
+`.env.local`, installs packages and creates the tables:
+
+```powershell
+git pull origin main
+powershell -ExecutionPolicy Bypass -File scripts\setup-database.ps1
+```
+
+If your project or region differs, pass `-ProjectRef` and `-PoolerHost`
+(both are in Supabase's **Connect** dialog). The steps below are the manual
+version.
+
+
 1. Create a free project at [supabase.com](https://supabase.com). Save the
    **database password** somewhere safe (a password manager).
 2. In the project, click **Connect** (top bar) and copy two connection strings:
