@@ -65,8 +65,8 @@ describe("prismaForUser", () => {
       const [row] = await tx.$queryRaw<{ points: number }[]>`select complete_block(${block.id}::uuid) as points`;
       return row.points;
     });
-    expect(points).toBe(10);
+    expect([100, 150]).toContain(points); // +50 if run before 9 AM
     const ledger = await prismaForUser(prisma, alice).pointsEntry.findMany();
-    expect(ledger.map((p) => p.points)).toEqual([10]);
+    expect(ledger.reduce((sum, p) => sum + p.points, 0)).toBe(points);
   });
 });

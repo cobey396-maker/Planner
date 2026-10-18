@@ -6,7 +6,6 @@ import type { PlannedBlock } from "./types";
  * Pure functions (no React, no database), so every rule is unit-tested.
  */
 
-export const POINTS_PER_BLOCK = 10;
 /** The flame turns purple from this many days on. */
 export const PURPLE_FLAME_STREAK = 10;
 

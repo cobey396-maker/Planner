@@ -78,6 +78,9 @@ const settingsSchema = z
     reminderLeadMinutes: z.union([z.literal(5), z.literal(10), z.literal(15), z.literal(30)]),
     weekStartsOn: z.union([z.literal(1), z.literal(7)]),
     timeZone: z.string().refine(isValidTimeZone, "Unknown time zone"),
+    // Equipped rewards; the database refuses ones you haven't unlocked.
+    flameStyle: z.string().regex(/^[a-z_]{1,20}$/),
+    title: z.string().regex(/^[a-z_]{1,30}$/),
     discoverable: z.boolean(),
   })
   .partial();
@@ -96,8 +99,11 @@ export async function saveSettingsAction(input: z.infer<typeof settingsSchema>):
   if (v.weekStartsOn !== undefined) row.week_starts_on = v.weekStartsOn;
   if (v.discoverable !== undefined) row.discoverable = v.discoverable;
   if (v.timeZone !== undefined) row.time_zone = v.timeZone;
+  if (v.flameStyle !== undefined) row.flame_style = v.flameStyle;
+  if (v.title !== undefined) row.title = v.title;
   if (Object.keys(row).length === 0) return { ok: true };
   const { error } = await session.supabase.from("user_settings").update(row).eq("user_id", session.userId);
+  if (error?.code === "23514") return { ok: false, error: "You haven't unlocked that yet." };
   return error ? { ok: false, error: "Couldn't save that setting." } : { ok: true };
 }
 

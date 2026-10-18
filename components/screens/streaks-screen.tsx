@@ -16,12 +16,12 @@ import {
   completionDays,
   currentStreak,
   earnedBadges,
-  POINTS_PER_BLOCK,
-  PURPLE_FLAME_STREAK,
   weekRecap,
   type BadgeCategory,
 } from "@/lib/planner/stats";
+import { FLAME_FILTERS, isUnlocked, levelProgress, REWARDS, streakBonus, titleName, XP, type FlameStyle } from "@/lib/planner/levels";
 import { usePlanner } from "@/lib/planner/store";
+import { useToast } from "@/components/ui/toast";
 import { formatDayKey } from "@/lib/time";
 import { addDays, dayKey, startOfWeek } from "@/lib/tz";
 import { useNow } from "@/lib/use-now";
@@ -30,13 +30,13 @@ const CATEGORIES: BadgeCategory[] = ["Getting started", "Streaks", "Big days", "
 
 /**
  * STREAKS: everything here is computed from your real completed blocks
- * (lib/planner/stats.ts). A new account starts at 0 streak, 0 points, and
- * every badge locked.
+ * (lib/planner/stats.ts) and your XP (lib/planner/levels.ts). A new account
+ * starts at 0 streak, level 1 with 0 XP, and every badge locked.
  */
 export function StreaksScreen() {
   const entrance = useEntrance();
   const now = useNow();
-  const { blocks, pointsTotal, timeZone, weekStartsOn, hasAcceptedHangout, friends } = usePlanner();
+  const { blocks, pointsTotal, timeZone, weekStartsOn, hasAcceptedHangout, friends, flameStyle, title } = usePlanner();
 
   if (!now) {
     return (
@@ -53,7 +53,7 @@ export function StreaksScreen() {
   const streak = currentStreak(days, today);
   const best = bestStreak(days);
   const doneToday = days.has(today);
-  const purple = streak >= PURPLE_FLAME_STREAK;
+  const progress = levelProgress(pointsTotal);
 
   const thisWeek = startOfWeek(today, weekStartsOn);
   const recap = weekRecap(blocks, thisWeek, timeZone, nowMs);
@@ -66,48 +66,54 @@ export function StreaksScreen() {
       <motion.div variants={stagger} initial={entrance} animate="animate" className="flex flex-col gap-6">
         <motion.div variants={fadeUp} className="grid grid-cols-2 gap-3">
           <Card className="flex flex-col items-center py-6 text-center">
-            <motion.span
-              aria-hidden
-              data-testid="flame"
-              data-color={purple ? "purple" : streak > 0 ? "orange" : "grey"}
-              className="text-5xl transition-[filter] duration-500"
-              style={{
-                // The flame emoji, recolored with CSS filters: grey at 0,
-                // orange while you're on a streak, purple from 10 days.
-                filter: purple ? "hue-rotate(250deg) saturate(1.6)" : streak === 0 ? "grayscale(1) opacity(0.5)" : "none",
-              }}
-              animate={streak > 0 ? { scale: [1, 1.12, 1], rotate: [0, -4, 3, 0] } : { scale: 1 }}
-              transition={streak > 0 ? { duration: 2.4, repeat: Infinity, ease: "easeInOut" } : fluid}
-            >
-              🔥
-            </motion.span>
+            <Flame style={streak > 0 ? (flameStyle as FlameStyle) : null} />
             <div className="mt-2 text-large-title tabular-nums" data-testid="streak">
               <CountUp value={streak} />
             </div>
             <div className="text-subhead text-secondary-label">day streak</div>
-            <div className="mt-1 text-caption text-tertiary-label">
-              {purple ? "Purple flame unlocked 💜" : `Best: ${best}`}
-            </div>
+            <div className="mt-1 text-caption text-tertiary-label">Best: {best}</div>
           </Card>
-          <Card className="flex flex-col items-center py-6 text-center">
-            <span aria-hidden className={cn("text-5xl", pointsTotal === 0 && "opacity-50 grayscale")}>
-              ✨
-            </span>
-            <div className="mt-2 text-large-title tabular-nums" data-testid="points">
-              <CountUp value={pointsTotal} />
-            </div>
-            <div className="text-subhead text-secondary-label">points</div>
-            <div className="mt-1 text-caption text-tertiary-label">{POINTS_PER_BLOCK} per finished block</div>
-          </Card>
+          <LevelCard xp={pointsTotal} title={title} />
         </motion.div>
 
         <motion.p variants={fadeUp} className="glass-card rounded-full px-4 py-2.5 text-center text-subhead">
           {streak === 0
             ? "Finish a block today to start your streak 🔥"
             : doneToday
-              ? `You're on fire! ${streak >= PURPLE_FLAME_STREAK ? "" : `${PURPLE_FLAME_STREAK - streak} more days for the purple flame.`}`
-              : "Finish one block today to keep your streak alive 🔥"}
+              ? `You're on fire! Tomorrow's first block earns +${streakBonus(streak + 1)} XP.`
+              : `Finish a block today to keep your streak: +${streakBonus(streak + 1)} XP bonus`}
         </motion.p>
+
+        <motion.section variants={fadeUp}>
+          <SectionHeader>Reward track</SectionHeader>
+          <RewardTrack level={progress.level} best={best} />
+        </motion.section>
+
+        <motion.section variants={fadeUp}>
+          <SectionHeader>How to earn XP</SectionHeader>
+          <div className="glass-card overflow-hidden rounded-card [&>*+*]:border-t [&>*+*]:border-separator">
+            {[
+              ["✅", "Finish a block", `+${XP.complete} XP`],
+              ["🌅", "Finish it before 9 AM", `+${XP.early} XP`],
+              ["🔥", "First finish of the day, on a streak", `+${XP.streakPerDay}/day`],
+              ["⏰", "A block ends and isn't done", `−${Math.abs(XP.missed)} XP`],
+            ].map(([emoji, what, xp]) => (
+              <div key={what} className="flex items-center gap-3 px-4 py-3">
+                <span aria-hidden className="text-xl">
+                  {emoji}
+                </span>
+                <span className="flex-1 text-subhead">{what}</span>
+                <span className={cn("shrink-0 text-subhead font-semibold tabular-nums", xp.startsWith("−") ? "text-danger" : "text-success")}>
+                  {xp}
+                </span>
+              </div>
+            ))}
+          </div>
+          <p className="mt-2 px-1 text-footnote text-secondary-label">
+            Streak bonus tops out at +{XP.streakMax}. Up to {XP.dailyCap} finished blocks a day earn XP. Missing blocks
+            never makes you lose a level.
+          </p>
+        </motion.section>
 
         <motion.section variants={fadeUp}>
           <SectionHeader>Weekly recap</SectionHeader>
@@ -222,4 +228,98 @@ function CountUp({ value }: { value: number }) {
     return () => controls.stop();
   }, [mv, value]);
   return <motion.span>{rounded}</motion.span>;
+}
+
+/** The streak flame in your equipped style (grey when there's no streak). */
+export function Flame({ style, size = "text-5xl" }: { style: FlameStyle | null; size?: string }) {
+  const rainbow = style === "rainbow";
+  return (
+    <motion.span
+      aria-hidden
+      data-testid="flame"
+      data-color={style ?? "grey"}
+      className={cn(size, "inline-block")}
+      style={{ filter: style === null ? "grayscale(1) opacity(0.5)" : rainbow ? undefined : FLAME_FILTERS[style] }}
+      animate={
+        style === null
+          ? { scale: 1 }
+          : {
+              scale: [1, 1.12, 1],
+              rotate: [0, -4, 3, 0],
+              ...(rainbow ? { filter: ["hue-rotate(0deg) saturate(1.6)", "hue-rotate(360deg) saturate(1.6)"] } : {}),
+            }
+      }
+      transition={style === null ? fluid : { duration: 2.4, repeat: Infinity, ease: "easeInOut" }}
+    >
+      🔥
+    </motion.span>
+  );
+}
+
+/** Level, title and the progress bar to the next level. */
+function LevelCard({ xp, title }: { xp: number; title: string }) {
+  const p = levelProgress(xp);
+  return (
+    <Card className="flex flex-col items-center justify-center py-6 text-center">
+      <div className="relative grid size-16 place-items-center">
+        <ProgressRing value={p.fraction} size={64} stroke={7} color="var(--tint)" label={`Level ${p.level} progress`}>
+          <span className="text-title3 font-bold tabular-nums" data-testid="level">
+            {p.level}
+          </span>
+        </ProgressRing>
+      </div>
+      <div className="mt-2 text-headline">Level {p.level}</div>
+      <div className="text-subhead text-tint">{titleName(title)}</div>
+      <div className="mt-1 text-caption tabular-nums text-tertiary-label" data-testid="xp">
+        <CountUp value={xp} /> XP · {p.toNext.toLocaleString()} to go
+      </div>
+    </Card>
+  );
+}
+
+/** Battle-pass style: every reward, locked until its level. Tap one to equip. */
+function RewardTrack({ level, best }: { level: number; best: number }) {
+  const toast = useToast();
+  const { flameStyle, title, equip } = usePlanner();
+  return (
+    <div className="-mx-4 flex gap-3 overflow-x-auto px-4 pb-2 [scrollbar-width:none]" data-testid="reward-track">
+      {REWARDS.map((r) => {
+        const unlocked = isUnlocked(r, level, best);
+        const equipped = (r.kind === "flame" ? flameStyle : title) === r.id;
+        return (
+          <motion.button
+            key={r.id}
+            type="button"
+            disabled={!unlocked || equipped}
+            whileTap={{ scale: 0.95 }}
+            transition={fluid}
+            data-testid={`reward-${r.id}`}
+            data-unlocked={unlocked}
+            aria-label={`${r.name}${unlocked ? (equipped ? ", equipped" : ", tap to equip") : `, unlocks at level ${r.level}`}`}
+            onClick={async () => {
+              const res = await equip(r.kind, r.id);
+              toast(res.ok ? `${r.name} equipped` : res.error);
+            }}
+            className={cn(
+              "glass-card relative flex w-28 shrink-0 flex-col items-center rounded-card px-2 py-3 text-center",
+              equipped && "shadow-[0_0_0_2.5px_var(--tint)]",
+              !unlocked && "opacity-50 grayscale",
+            )}
+          >
+            <span className="text-caption font-semibold text-secondary-label">
+              {r.kind === "flame" && "streak" in r && r.streak ? `Lv ${r.level} or ${r.streak}-day streak` : `Level ${r.level}`}
+            </span>
+            <span aria-hidden className="my-1.5 text-3xl" style={r.kind === "flame" ? { filter: r.id === "rainbow" ? "saturate(1.6)" : FLAME_FILTERS[r.id] } : undefined}>
+              {r.kind === "flame" ? "🔥" : r.emoji}
+            </span>
+            <span className="text-footnote font-semibold">{r.name}</span>
+            <span className="mt-0.5 text-caption text-secondary-label">
+              {equipped ? "Equipped" : unlocked ? "Tap to equip" : r.kind === "title" ? "Title" : "Flame"}
+            </span>
+            {!unlocked && <Lock aria-hidden size={12} className="absolute right-2 top-2 text-secondary-label" />}
+          </motion.button>
+        );
+      })}
+    </div>
+  );
 }

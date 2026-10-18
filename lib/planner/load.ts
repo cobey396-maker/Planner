@@ -1,7 +1,8 @@
 import "server-only";
 import type { TaskColor } from "@/lib/design/tokens";
 import type { ServerSupabase } from "@/lib/supabase/server";
-import type { FriendRequest, HangoutInvite, PersonSummary, PlannedBlock, PlannerSettings, Suggestion } from "./types";
+import { dayKey, startOfWeek, zonedTimeToUtc } from "@/lib/tz";
+import type { FriendRequest, HangoutInvite, LeaderRow, PersonSummary, PlannedBlock, PlannerSettings, Suggestion } from "./types";
 
 /**
  * Everything the tabs need, loaded once on the server when a tab opens
@@ -25,6 +26,13 @@ export type PlannerData = {
   inviteCode: string | null;
   hangouts: HangoutInvite[];
   hasAcceptedHangout: boolean;
+  /** Equipped rewards. */
+  flameStyle: string;
+  title: string;
+  /** You and your friends this week. */
+  leaderboard: LeaderRow[];
+  /** Blocks that were missed since last time (and the XP they cost). */
+  missed: { count: number; xpLost: number } | null;
   /** The database is missing a migration: tell the user how to update it. */
   databaseOutdated: boolean;
 };
@@ -59,13 +67,38 @@ export function toPerson(row: ProfileRow): PersonSummary {
 /** Postgres error codes that mean "this table/column/function doesn't exist yet". */
 const MISSING_OBJECT = new Set(["42703", "42P01", "42883", "PGRST202", "PGRST204"]);
 
+/** You and your friends, ranked by XP earned since `weekStart` (epoch ms). */
+export async function leaderboard(supabase: ServerSupabase, weekStart: number): Promise<LeaderRow[]> {
+  const { data } = await supabase.rpc("friends_leaderboard", { week_start: new Date(weekStart).toISOString() });
+  return ((data ?? []) as (ProfileRow & {
+    week_xp: number;
+    total_xp: number;
+    level: number;
+    title: string | null;
+    flame_style: string | null;
+    is_me: boolean;
+  })[]).map((r) => ({
+    ...toPerson({ ...r, city: null, region: null }),
+    weekXp: r.week_xp,
+    totalXp: r.total_xp,
+    level: r.level,
+    title: r.title ?? "rookie",
+    flameStyle: r.flame_style ?? "classic",
+    isMe: r.is_me,
+  }));
+}
+
 export async function loadPlannerData(supabase: ServerSupabase, userId: string, repaired = false): Promise<PlannerData> {
+  // Charge XP for blocks that ended without being done (once each), so the
+  // totals below are up to date. Older databases don't have this yet.
+  const penalties = await supabase.rpc("apply_missed_penalties");
+  const missedRow = (penalties.data as { missed: number; xp_lost: number }[] | null)?.[0];
   const since = new Date(Date.now() - HISTORY_DAYS * 86_400_000).toISOString();
 
   const [settings, profile, blocks, points, friendships, suggestions, invite, hangouts] = await Promise.all([
     supabase
       .from("user_settings")
-      .select("time_zone, week_starts_on, notify_upcoming, notify_missed, notify_friends, reminder_lead_minutes, discoverable")
+      .select("time_zone, week_starts_on, notify_upcoming, notify_missed, notify_friends, reminder_lead_minutes, discoverable, flame_style, title")
       .eq("user_id", userId)
       .single(),
     supabase.from("profiles").select(PROFILE_FIELDS).eq("id", userId).single(),
@@ -90,7 +123,8 @@ export async function loadPlannerData(supabase: ServerSupabase, userId: string, 
     repairUnavailable = MISSING_OBJECT.has(error.code ?? "");
   }
   const databaseOutdated =
-    repairUnavailable || [settings, profile, suggestions].some((r) => r.error && MISSING_OBJECT.has(r.error.code ?? ""));
+    repairUnavailable ||
+    (penalties.error !== null && MISSING_OBJECT.has(penalties.error.code ?? "")) || [settings, profile, suggestions].some((r) => r.error && MISSING_OBJECT.has(r.error.code ?? ""));
 
   // People connected to me: fetch their public profile fields in one query.
   const rows = (friendships.data ?? []) as { id: string; requester_id: string; addressee_id: string; status: string }[];
@@ -118,12 +152,18 @@ export async function loadPlannerData(supabase: ServerSupabase, userId: string, 
     notify_friends: boolean;
     reminder_lead_minutes: number;
     discoverable: boolean;
+    flame_style: string;
+    title: string;
   } | null;
+  const timeZone = s?.time_zone ?? "UTC";
+  const weekStartsOn = s?.week_starts_on === 7 ? 7 : 1;
+  const weekStart = zonedTimeToUtc(startOfWeek(dayKey(Date.now(), timeZone), weekStartsOn), 0, timeZone);
+  const board = await leaderboard(supabase, weekStart);
 
   return {
     settings: {
-      timeZone: s?.time_zone ?? "UTC",
-      weekStartsOn: s?.week_starts_on === 7 ? 7 : 1,
+      timeZone,
+      weekStartsOn,
       notifyUpcoming: s?.notify_upcoming ?? true,
       notifyMissed: s?.notify_missed ?? true,
       notifyFriends: s?.notify_friends ?? true,
@@ -175,6 +215,10 @@ export async function loadPlannerData(supabase: ServerSupabase, userId: string, 
         activity: h.activity,
       })),
     hasAcceptedHangout: hangoutRows.some((h) => h.status === "accepted"),
+    flameStyle: s?.flame_style ?? "classic",
+    title: s?.title ?? "rookie",
+    leaderboard: board,
+    missed: missedRow && missedRow.missed > 0 ? { count: missedRow.missed, xpLost: missedRow.xp_lost } : null,
     databaseOutdated,
   };
 }

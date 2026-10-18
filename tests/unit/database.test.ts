@@ -185,18 +185,20 @@ describe("points can't be faked", () => {
     ).toMatch(/permission denied/);
   });
 
-  it("complete_block awards points exactly once, and undo takes them back", async () => {
+  it("complete_block awards XP exactly once, and undo takes it back", async () => {
     const a = await newUser();
     const block = await makeBlock(a, await makeTask(a), "2026-10-22T15:00Z", "2026-10-22T16:00Z");
     await asUser(db, a, async (tx) => {
       const award = async () => (await tx.query<{ p: number }>("select complete_block($1) p", [block])).rows[0].p;
       const total = async () => (await tx.query<{ t: number }>("select coalesce(sum(points),0)::int t from points_ledger")).rows[0].t;
-      expect(await award()).toBe(10);
-      expect(await award()).toBe(0); // double-tap, retry, replay: still 10 total
-      expect(await total()).toBe(10);
+      // 100 XP, or 150 if the test happens to run before 9 AM (early bonus).
+      const first = await award();
+      expect([100, 150]).toContain(first);
+      expect(await award()).toBe(0); // double-tap, retry, replay: still the same total
+      expect(await total()).toBe(first);
       await tx.query("select uncomplete_block($1)", [block]);
       expect(await total()).toBe(0);
-      expect(await award()).toBe(10);
+      expect(await award()).toBe(first);
     });
   });
 

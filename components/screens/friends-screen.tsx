@@ -19,7 +19,8 @@ import { sharedFreeWindows } from "@/lib/planner/free-time";
 import { usePlanner } from "@/lib/planner/store";
 import type { Interval, PersonSummary } from "@/lib/planner/types";
 import { formatDayKey, formatDuration, formatTimeRange } from "@/lib/time";
-import { addDays, dayKey, dayRange, zonedTimeToUtc } from "@/lib/tz";
+import { addDays, dayKey, dayRange, startOfWeek, zonedTimeToUtc } from "@/lib/tz";
+import { levelOf, titleName } from "@/lib/planner/levels";
 import { useNow } from "@/lib/use-now";
 
 /** Shared free time is only searched for between these local hours. */
@@ -110,6 +111,11 @@ export function FriendsScreen() {
             </motion.div>
           ))}
         </AnimatePresence>
+
+        <motion.section variants={fadeUp}>
+          <SectionHeader>Leaderboard · this week</SectionHeader>
+          <Leaderboard />
+        </motion.section>
 
         <motion.section variants={fadeUp}>
           <SectionHeader>Your friends</SectionHeader>
@@ -379,5 +385,73 @@ function InviteSheet({ open, onOpenChange }: { open: boolean; onOpenChange: (o: 
         </div>
       )}
     </Sheet>
+  );
+}
+
+const MEDALS = ["🥇", "🥈", "🥉"];
+
+/**
+ * You and your friends, ranked by XP earned this week (resets when your week
+ * starts). Shows each person's level and equipped title. Only friends can
+ * see each other here.
+ */
+function Leaderboard() {
+  const now = useNow();
+  const { mode, leaderboard, refreshLeaderboard, timeZone, weekStartsOn, pointsTotal, profile, blocks } = usePlanner();
+  const today = now ? dayKey(now.getTime(), timeZone) : null;
+  const weekStart = today ? zonedTimeToUtc(startOfWeek(today, weekStartsOn), 0, timeZone) : null;
+
+  useEffect(() => {
+    if (weekStart !== null) void refreshLeaderboard(weekStart);
+  }, [weekStart, refreshLeaderboard, pointsTotal]);
+
+  if (!now || weekStart === null) return <Skeleton className="h-24 rounded-card" />;
+
+  // Demo mode has no server: it's just you, with XP from this week's finishes.
+  const rows =
+    mode === "local"
+      ? [
+          {
+            id: "me",
+            displayName: profile?.displayName ?? "You",
+            handle: "",
+            avatarUrl: null,
+            avatarColor: "blue" as const,
+            city: null,
+            region: null,
+            weekXp: blocks.some((b) => b.status === "done" && (b.completedAt ?? 0) >= weekStart) ? pointsTotal : 0,
+            totalXp: pointsTotal,
+            level: levelOf(pointsTotal),
+            title: "rookie",
+            flameStyle: "classic",
+            isMe: true,
+          },
+        ]
+      : leaderboard;
+
+  return (
+    <div className="glass-card overflow-hidden rounded-card [&>*+*]:border-t [&>*+*]:border-separator" data-testid="leaderboard">
+      {rows.map((r, i) => (
+        <div key={r.id} className={cn("flex items-center gap-3 px-4 py-3", r.isMe && "bg-tint/8")}>
+          <span className="w-7 text-center text-headline tabular-nums text-secondary-label">{MEDALS[i] ?? i + 1}</span>
+          <Avatar name={r.displayName} color={r.avatarColor} src={r.avatarUrl} size={40} />
+          <div className="min-w-0 flex-1">
+            <div className="truncate text-headline">
+              {r.isMe ? "You" : r.displayName}
+            </div>
+            <div className="truncate text-footnote text-secondary-label">
+              Level {r.level} · {titleName(r.title)}
+            </div>
+          </div>
+          <div className="text-right">
+            <div className="text-headline tabular-nums">{r.weekXp.toLocaleString()}</div>
+            <div className="text-caption text-secondary-label">XP</div>
+          </div>
+        </div>
+      ))}
+      {rows.length <= 1 && (
+        <p className="px-4 py-3 text-footnote text-secondary-label">Add friends to compete for the top spot each week.</p>
+      )}
+    </div>
   );
 }

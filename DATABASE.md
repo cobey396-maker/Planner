@@ -223,6 +223,24 @@ the server may look up the email behind a username (`email_for_username()`,
 service role only). Add `SUPABASE_SECRET_KEY` to `.env.local`
 (Supabase → Project Settings → API Keys → Secret keys). Without it, people log in with their email.
 
+## Migration 5: XP, levels and the leaderboard
+
+All XP is written by database functions, never by the app, so it can't be
+faked from the browser:
+
+| Action | XP |
+| --- | --- |
+| Finish a block (`complete_block`) | +100 |
+| …before 9 AM local time | +50 |
+| First finish of the day, on a 2+ day streak | +20 per streak day (max +200) |
+| A block ends without being done (`apply_missed_penalties`, run when the app loads) | −50, never below your current level |
+
+Only the first 10 finished blocks a day earn XP. Levels: 500 XP for level 2,
+each level 50 more, a flat 1,500 per level from level 22 (max 200). Rewards
+(flame colors, titles) live in the `rewards` table; a trigger refuses
+equipping one you haven't unlocked. `friends_leaderboard()` returns you and
+your friends only. Old points were converted (10 points → 100 XP).
+
 ## Email notifications (after deploying)
 
 Reminders ("starts in 15 min"), missed-block notices and friend-request

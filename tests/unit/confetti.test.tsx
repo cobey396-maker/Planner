@@ -29,14 +29,14 @@ const wrapper = ({ children }: { children: ReactNode }) => (
 describe("confetti on task completion", () => {
   beforeEach(() => vi.mocked(fireConfetti).mockClear());
 
-  it("fires when a block is marked complete (and adds 10 points), not when it's un-checked", async () => {
+  it("fires when a block is marked complete (and adds XP), not when it's un-checked", async () => {
     const { result } = renderHook(() => usePlanner(), { wrapper });
     const status = () => result.current.blocks[0].status;
     expect(result.current.pointsTotal).toBe(0);
 
     await act(() => result.current.setDone("b1", true));
     expect(status()).toBe("done");
-    expect(result.current.pointsTotal).toBe(10);
+    expect(result.current.pointsTotal).toBeGreaterThanOrEqual(100);
     expect(fireConfetti).toHaveBeenCalledTimes(1);
 
     await act(() => result.current.setDone("b1", false)); // un-check
@@ -56,5 +56,23 @@ describe("fireConfetti itself", () => {
     real.fireConfetti();
     expect(document.getElementById("confetti-canvas")).toBeNull();
     vi.unstubAllGlobals();
+  });
+});
+
+describe("leveling up", () => {
+  it("crossing 500 XP shows the level-up celebration for level 2", async () => {
+    const blocks: PlannedBlock[] = Array.from({ length: 5 }, (_, i) => ({ ...block, id: `l${i}`, taskId: `lt${i}` }));
+    const { result } = renderHook(() => usePlanner(), {
+      wrapper: ({ children }: { children: ReactNode }) => (
+        <PlannerProvider initial={{ ...EMPTY_PLANNER, blocks, pointsTotal: 450 }} mode="local">
+          {children}
+        </PlannerProvider>
+      ),
+    });
+    expect(result.current.levelUp).toBeNull();
+    await act(() => result.current.setDone("l0", true));
+    expect(result.current.levelUp).toEqual({ from: 1, to: 2 });
+    act(() => result.current.dismissLevelUp());
+    expect(result.current.levelUp).toBeNull();
   });
 });

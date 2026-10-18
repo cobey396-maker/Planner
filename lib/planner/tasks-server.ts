@@ -211,10 +211,16 @@ export async function moveBlock(
   return { ok: true, startsAt: slot.startsAt, endsAt: slot.endsAt };
 }
 
-/** Mark a block done (awards points) or not done. */
-export async function setBlockDone(supabase: Supabase, blockId: string, done: boolean): Promise<Result> {
+/** Your XP total (the sum of your ledger; RLS shows only your own rows). */
+export async function xpTotal(supabase: Supabase): Promise<number> {
+  const { data } = await supabase.from("points_ledger").select("points");
+  return ((data ?? []) as { points: number }[]).reduce((sum, r) => sum + r.points, 0);
+}
+
+/** Mark a block done (the server awards XP) or not done (takes it back). */
+export async function setBlockDone(supabase: Supabase, blockId: string, done: boolean): Promise<Result<{ xp: number; total: number }>> {
   if (!uuid.safeParse(blockId).success) return { ok: false, error: "Unknown block." };
-  const { error } = await supabase.rpc(done ? "complete_block" : "uncomplete_block", { block: blockId });
+  const { data, error } = await supabase.rpc(done ? "complete_block" : "uncomplete_block", { block: blockId });
   if (error) return { ok: false, error: done ? "Couldn't mark it done." : "Couldn't undo that." };
-  return { ok: true };
+  return { ok: true, xp: done ? ((data as number | null) ?? 0) : 0, total: await xpTotal(supabase) };
 }

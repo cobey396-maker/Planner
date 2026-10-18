@@ -4,7 +4,9 @@ import { z } from "zod";
 import { appUrl, sendEmail } from "@/lib/email/send";
 import { friendRequestEmail } from "@/lib/email/templates";
 import type { SkippedDay } from "@/lib/planner/placement";
-import { blocksBetween, createTask, deleteBlock, deleteTask, setBlockDone, type NewTaskInput } from "@/lib/planner/tasks-server";
+import { leaderboard } from "@/lib/planner/load";
+import { blocksBetween, createTask, deleteBlock, deleteTask, setBlockDone, xpTotal, type NewTaskInput } from "@/lib/planner/tasks-server";
+import type { LeaderRow } from "@/lib/planner/types";
 import type { Interval, PlannedBlock } from "@/lib/planner/types";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
@@ -38,7 +40,7 @@ export async function createTaskAction(input: NewTaskInput): Promise<Result<{ bl
 
 const uuid = z.string().uuid();
 
-export async function setBlockDoneAction(blockId: string, done: boolean): Promise<Result> {
+export async function setBlockDoneAction(blockId: string, done: boolean): Promise<Result<{ xp: number; total: number }>> {
   const session = await signedIn();
   if (!session) return SESSION_EXPIRED;
   return setBlockDone(session.supabase, blockId, done);
@@ -55,12 +57,22 @@ export async function deleteTaskAction(taskId: string): Promise<Result> {
  * Your blocks from the database (the past ~400 days and the next ~400), so
  * every tab can re-sync with what's actually saved.
  */
-export async function loadBlocksAction(): Promise<Result<{ blocks: PlannedBlock[] }>> {
+export async function loadBlocksAction(): Promise<Result<{ blocks: PlannedBlock[]; xp: number }>> {
   const session = await signedIn();
   if (!session) return SESSION_EXPIRED;
   const now = Date.now();
-  const blocks = await blocksBetween(session.supabase, now - 400 * 86_400_000, now + 400 * 86_400_000);
-  return { ok: true, blocks };
+  const [blocks, xp] = await Promise.all([
+    blocksBetween(session.supabase, now - 400 * 86_400_000, now + 400 * 86_400_000),
+    xpTotal(session.supabase),
+  ]);
+  return { ok: true, blocks, xp };
+}
+
+/** You and your friends, ranked by XP since `weekStart` (epoch ms). */
+export async function leaderboardAction(weekStart: number): Promise<Result<{ rows: LeaderRow[] }>> {
+  const session = await signedIn();
+  if (!session) return SESSION_EXPIRED;
+  return { ok: true, rows: await leaderboard(session.supabase, weekStart) };
 }
 
 /** Delete just one occurrence. */

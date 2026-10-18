@@ -641,3 +641,43 @@ error in the terminal if a save fails.
 Validate the format locally first, debounce the server call, ignore
 out-of-order responses, and still enforce uniqueness in the database
 (unique index) because the check can be stale by the time you submit.
+
+## Update: XP, levels, rewards and a friends leaderboard
+
+**In plain English:** finishing blocks earns XP (more if early or on a
+streak), missing them costs a little, XP fills levels, levels unlock flame
+colors and titles, and friends race on a weekly leaderboard. Hitting a new
+level gets a big Fortnite-style celebration.
+
+**Design choices worth knowing:**
+- **The server is the referee.** XP is only written by database functions
+  (the browser can read its ledger but never write it), the daily cap stops
+  farming, and equipping is checked by a trigger. The app also computes the
+  same numbers locally for an instant update, then swaps in the server's
+  exact total: *optimistic UI with server reconciliation*.
+- **A ledger, not a counter.** Every XP change is a row with a reason
+  (complete, early, streak, missed). Totals are sums, undo deletes rows, and
+  the history explains every number.
+- **One rule set, two languages.** The level formula lives in SQL and in
+  TypeScript; a test compares them for every level so they can't drift.
+- **Loss aversion, gently.** Missing costs XP but can never drop your level,
+  like Fortnite: motivating without being punishing.
+
+**Interview questions**
+
+**Q1. How do you stop users from cheating a points system?**
+Never trust the client: compute rewards on the server from facts it
+controls (the block, its time, the user's history), store them in an
+append-only ledger users can't write to, make awards idempotent (one row per
+block and reason), and add caps for farming.
+
+**Q2. Why a ledger instead of a `points` column?**
+A column loses history and races under concurrent updates. A ledger is
+auditable, easy to undo (delete the rows for that block), supports reasons
+and time windows (weekly leaderboards are a `where created_at >= …`), and the
+total is just a sum.
+
+**Q3. How do you keep the same logic in the database and the app consistent?**
+Put the source of truth in one place (the database), mirror only what the UI
+needs, and write a test that runs both implementations over many inputs and
+compares the results.

@@ -108,8 +108,11 @@ test("the Week tab's + adds a task and the hours chart matches the schedule", as
 test("streaks start at 0, badges start locked, and finishing a block counts", async ({ page }) => {
   await openAt(page, "/streaks");
   await expect(page.getByTestId("streak")).toHaveText("0");
-  await expect(page.getByTestId("points")).toHaveText("0");
+  await expect(page.getByTestId("level")).toHaveText("1");
+  await expect(page.getByTestId("xp")).toHaveText("0 XP · 500 to go");
   await expect(page.getByTestId("flame")).toHaveAttribute("data-color", "grey");
+  await expect(page.getByTestId("reward-classic")).toHaveAttribute("data-unlocked", "true");
+  await expect(page.getByTestId("reward-blue")).toHaveAttribute("data-unlocked", "false");
   await expect(page.getByText("Nothing due yet this week")).toBeVisible();
   await expect(page.getByTestId("badge-count")).toHaveText("0 of 31");
   for (const badge of await page.locator("[data-testid^=badge-][data-earned]").all()) {
@@ -126,8 +129,9 @@ test("streaks start at 0, badges start locked, and finishing a block counts", as
 
   await page.getByRole("link", { name: "Streaks" }).click();
   await expect(page.getByTestId("streak")).toHaveText("1");
-  await expect(page.getByTestId("points")).toHaveText("10");
-  await expect(page.getByTestId("flame")).toHaveAttribute("data-color", "orange");
+  // +100 XP (10:45 AM: no early bonus; day 1 of a streak: no streak bonus yet).
+  await expect(page.getByTestId("xp")).toHaveText("100 XP · 400 to go");
+  await expect(page.getByTestId("flame")).toHaveAttribute("data-color", "classic");
   await expect(page.getByText("You hit 100% of your plan")).toBeVisible();
   // Exactly one badge unlocks: "First step". Everything else stays locked.
   await expect(page.getByTestId("badge-first_step")).toHaveAttribute("data-earned", "true");
@@ -192,6 +196,29 @@ test("Schedule Helper needs an account (no AI calls in demo mode)", async ({ pag
   await openAt(page, "/helper");
   await expect(page.getByRole("heading", { name: "Schedule Helper", level: 1 })).toBeVisible();
   await expect(page.getByText("Schedule Helper needs an account")).toBeVisible();
+});
+
+test("five finished blocks: level up to 2, celebrated Fortnite-style", async ({ page }) => {
+  await openAt(page, "/today");
+  for (const name of ["One", "Two", "Three", "Four", "Five"]) await addTask(page, name, "15m");
+  for (const name of ["One", "Two", "Three", "Four"]) {
+    await page.getByRole("button", { name: new RegExp(`^${name}`) }).click();
+    await page.getByRole("button", { name: "Mark complete" }).click();
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+  }
+  await page.getByRole("button", { name: /^Five/ }).click();
+  await page.getByRole("button", { name: "Mark complete" }).click();
+  const levelUp = page.getByRole("dialog", { name: "2" });
+  await expect(levelUp).toContainText("Level up!");
+  await expect(levelUp).toContainText("You reached level 2");
+  await levelUp.getByRole("button", { name: "Let's go!" }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+
+  // The leaderboard on Friends shows you with your XP this week.
+  await page.getByRole("link", { name: "Friends" }).click();
+  await expect(page.getByTestId("leaderboard")).toContainText("You");
+  await expect(page.getByTestId("leaderboard")).toContainText("Level 2");
+  await expect(page.getByTestId("leaderboard")).toContainText("500");
 });
 
 test("Friends starts empty: no made-up people", async ({ page }) => {

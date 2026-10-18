@@ -137,6 +137,9 @@ model UserSettings {
   reminderLeadMinutes Int      @default(15) @map("reminder_lead_minutes") @db.SmallInt
   /// Show me in "people near you" suggestions for others in my city.
   discoverable        Boolean  @default(true)
+  /// Equipped rewards (unlocked by level; checked by a database trigger).
+  flameStyle          String   @default("classic") @map("flame_style") @db.VarChar(20)
+  title               String   @default("rookie") @db.VarChar(30)
   updatedAt           DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   profile Profile @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -225,8 +228,8 @@ model Block {
 model PointsEntry {
   id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   userId    String   @map("user_id") @db.Uuid
-  /// One award per block, enforced by the unique index.
-  blockId   String?  @unique @map("block_id") @db.Uuid
+  /// One row per block per reason (complete, early, streak, missed).
+  blockId   String?  @map("block_id") @db.Uuid
   points    Int      @db.SmallInt
   reason    String   @db.VarChar(40)
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
@@ -234,6 +237,7 @@ model PointsEntry {
   user  Profile @relation(fields: [userId], references: [id], onDelete: Cascade)
   block Block?  @relation(fields: [blockId], references: [id], onDelete: SetNull)
 
+  @@unique([blockId, reason])
   @@index([userId, createdAt])
   @@map("points_ledger")
 }
@@ -273,4 +277,22 @@ model HangoutInvite {
   @@index([toUserId, status])
   @@index([fromUserId])
   @@map("hangout_invites")
+}
+
+/// Usernames nobody may take (migration 4). Read only by database functions.
+model ReservedUsername {
+  name String @id
+
+  @@map("reserved_usernames")
+}
+
+/// Level rewards you can equip: flame styles and titles (migration 5).
+model Reward {
+  id     String @id
+  kind   String
+  level  Int
+  /// Alternative unlock: a streak of this many days (e.g. the purple flame).
+  streak Int?
+
+  @@map("rewards")
 }

@@ -4,6 +4,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState, u
 import {
   createTaskAction,
   deleteBlockAction,
+  leaderboardAction,
   loadBlocksAction,
   deleteTaskAction,
   friendBusyAction,
@@ -18,8 +19,8 @@ import { saveSettingsAction } from "@/app/actions/profile";
 import { fireConfetti } from "@/lib/confetti";
 import { dayRange } from "@/lib/tz";
 import { placeMany, type SkippedDay } from "./placement";
-import { POINTS_PER_BLOCK } from "./stats";
-import type { FriendRequest, HangoutInvite, Interval, PersonSummary, PlannedBlock, Suggestion } from "./types";
+import { levelOf, xpForCompletion } from "./levels";
+import type { FriendRequest, HangoutInvite, Interval, LeaderRow, PersonSummary, PlannedBlock, Suggestion } from "./types";
 
 /**
  * PLANNER STATE (client)
@@ -49,6 +50,11 @@ export type InitialPlannerData = {
   hasAcceptedHangout: boolean;
   /** Notification and privacy preferences (null in demo mode). */
   prefs: Prefs | null;
+  flameStyle: string;
+  title: string;
+  leaderboard: LeaderRow[];
+  /** Missed blocks found when the app loaded (shown once as a message). */
+  missed: { count: number; xpLost: number } | null;
 };
 
 export type Prefs = {
@@ -72,6 +78,10 @@ export const EMPTY_PLANNER: InitialPlannerData = {
   hangouts: [],
   hasAcceptedHangout: false,
   prefs: null,
+  flameStyle: "classic",
+  title: "rookie",
+  leaderboard: [],
+  missed: null,
 };
 
 type Result<T = object> = ({ ok: true } & T) | { ok: false; error: string };
@@ -98,7 +108,8 @@ type PlannerValue = {
   replaceBlocks: (blocks: PlannedBlock[]) => void;
   /** Reload the schedule from the database. */
   syncBlocks: () => Promise<PlannedBlock[] | null>;
-  setDone: (blockId: string, done: boolean) => Promise<Result>;
+  /** Finish (or un-finish) a block. Returns the XP it earned. */
+  setDone: (blockId: string, done: boolean) => Promise<Result<{ xp: number }>>;
   deleteTask: (taskId: string) => Promise<Result>;
   setWeekStartsOn: (value: 1 | 7) => Promise<void>;
   respondRequest: (friendshipId: string, accept: boolean) => Promise<Result>;
@@ -109,6 +120,16 @@ type PlannerValue = {
   setProfile: (profile: PersonSummary) => void;
   prefs: Prefs | null;
   setPrefs: (patch: Partial<Prefs>) => Promise<Result>;
+  /** pointsTotal is your XP. */
+  flameStyle: string;
+  title: string;
+  equip: (kind: "flame" | "title", id: string) => Promise<Result>;
+  leaderboard: LeaderRow[];
+  refreshLeaderboard: (weekStart: number) => Promise<void>;
+  missed: { count: number; xpLost: number } | null;
+  /** Set when you just went up a level (shown by <LevelUp />), then cleared. */
+  levelUp: { from: number; to: number } | null;
+  dismissLevelUp: () => void;
 };
 
 const PlannerContext = createContext<PlannerValue | null>(null);
@@ -145,6 +166,41 @@ export function PlannerProvider({ initial, mode, children }: { initial: InitialP
   const [hangouts, setHangouts] = useState(initial.hangouts);
   const [hasAcceptedHangout, setHasAcceptedHangout] = useState(initial.hasAcceptedHangout);
   const [prefs, setPrefsState] = useState(initial.prefs);
+  const [flameStyle, setFlameStyle] = useState(initial.flameStyle);
+  const [title, setTitle] = useState(initial.title);
+  const [leaderboard, setLeaderboard] = useState(initial.leaderboard);
+  const [levelUp, setLevelUp] = useState<{ from: number; to: number } | null>(null);
+
+  /** Change the XP total, celebrating if that crosses into a new level. */
+  const applyXp = useCallback((next: number | ((prev: number) => number)) => {
+    setPoints((prev) => {
+      const value = Math.max(0, typeof next === "function" ? next(prev) : next);
+      const [from, to] = [levelOf(prev), levelOf(value)];
+      if (to > from) setLevelUp({ from, to });
+      return value;
+    });
+  }, []);
+
+  const equip = useCallback(
+    async (kind: "flame" | "title", id: string): Promise<Result> => {
+      const before = kind === "flame" ? flameStyle : title;
+      (kind === "flame" ? setFlameStyle : setTitle)(id);
+      if (mode === "local") return { ok: true };
+      const result = await safely(() => saveSettingsAction(kind === "flame" ? { flameStyle: id } : { title: id }));
+      if (!result.ok) (kind === "flame" ? setFlameStyle : setTitle)(before);
+      return result;
+    },
+    [mode, flameStyle, title],
+  );
+
+  const refreshLeaderboard = useCallback(
+    async (weekStart: number) => {
+      if (mode !== "remote") return;
+      const result = await safely(() => leaderboardAction(weekStart));
+      if (result.ok) setLeaderboard(result.rows);
+    },
+    [mode],
+  );
 
   const setPrefs = useCallback(
     async (patch: Partial<Prefs>): Promise<Result> => {
@@ -168,8 +224,9 @@ export function PlannerProvider({ initial, mode, children }: { initial: InitialP
     const result = await safely(() => loadBlocksAction());
     if (!result.ok) return null;
     setBlocks([...result.blocks].sort((a, b) => a.startsAt - b.startsAt));
+    applyXp(result.xp);
     return result.blocks;
-  }, [mode]);
+  }, [mode, applyXp]);
 
   // Coming back to the tab/app: refresh (at most every 15 seconds).
   useEffect(() => {
@@ -248,27 +305,36 @@ export function PlannerProvider({ initial, mode, children }: { initial: InitialP
   const replaceBlocks = useCallback((next: PlannedBlock[]) => setBlocks([...next].sort((a, b) => a.startsAt - b.startsAt)), []);
 
   const setDone = useCallback(
-    async (blockId: string, done: boolean): Promise<Result> => {
+    async (blockId: string, done: boolean): Promise<Result<{ xp: number }>> => {
       const before = blocks.find((b) => b.id === blockId);
-      if (!before || (before.status === "done") === done) return { ok: true };
-      // Optimistic: update the screen right away.
+      if (!before || (before.status === "done") === done) return { ok: true, xp: 0 };
+      const now = Date.now();
+      // Optimistic: update the screen right away with the XP we expect…
       const patch = (status: PlannedBlock["status"], completedAt: number | null) =>
         setBlocks((prev) => prev.map((b) => (b.id === blockId ? { ...b, status, completedAt } : b)));
-      patch(done ? "done" : "planned", done ? Date.now() : null);
-      setPoints((p) => Math.max(0, p + (done ? POINTS_PER_BLOCK : -POINTS_PER_BLOCK)));
-      if (done) fireConfetti();
+      const expected = done ? xpForCompletion(blocks, now, timeZone) : 0;
+      patch(done ? "done" : "planned", done ? now : null);
+      if (done) {
+        applyXp((p) => p + expected);
+        fireConfetti();
+      }
 
-      if (mode === "local") return { ok: true };
+      if (mode === "local") {
+        if (!done) applyXp((p) => p - (before.completedAt ? xpForCompletion(blocks.filter((b) => b.id !== blockId), before.completedAt, timeZone) : 0));
+        return { ok: true, xp: expected };
+      }
       const result = await safely(() => setBlockDoneAction(blockId, done));
       if (!result.ok) {
         // Roll back.
         patch(before.status, before.completedAt);
-        setPoints((p) => Math.max(0, p + (done ? -POINTS_PER_BLOCK : POINTS_PER_BLOCK)));
+        if (done) applyXp((p) => p - expected);
         return result;
       }
-      return { ok: true };
+      // …then use the server's exact total (it decides the XP).
+      applyXp(result.total);
+      return { ok: true, xp: result.xp };
     },
-    [mode, blocks],
+    [mode, blocks, timeZone, applyXp],
   );
 
   const deleteTask = useCallback(
@@ -374,11 +440,20 @@ export function PlannerProvider({ initial, mode, children }: { initial: InitialP
       setProfile,
       prefs,
       setPrefs,
+      flameStyle,
+      title,
+      equip,
+      leaderboard,
+      refreshLeaderboard,
+      missed: initial.missed,
+      levelUp,
+      dismissLevelUp: () => setLevelUp(null),
     }),
     [
       mode, timeZone, weekStartsOn, profile, blocks, pointsTotal, friends, requests, suggestions, initial.inviteCode,
       hangouts, hasAcceptedHangout, addTask, deleteBlock, replaceBlocks, syncBlocks, setDone, deleteTask, setWeekStartsOn, respondRequest, requestFriend,
-      friendBusy, sendHangout, respondHangout, prefs, setPrefs,
+      friendBusy, sendHangout, respondHangout, prefs, setPrefs, flameStyle, title, equip, leaderboard,
+      refreshLeaderboard, initial.missed, levelUp,
     ],
   );
 

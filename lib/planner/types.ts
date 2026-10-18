@@ -46,3 +46,13 @@ export type PlannerSettings = {
   timeZone: string;
   weekStartsOn: 1 | 7;
 };
+
+/** One row of the friends leaderboard. */
+export type LeaderRow = PersonSummary & {
+  weekXp: number;
+  totalXp: number;
+  level: number;
+  title: string;
+  flameStyle: string;
+  isMe: boolean;
+};

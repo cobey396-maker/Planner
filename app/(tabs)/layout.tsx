@@ -1,3 +1,4 @@
+import { LevelUp, MissedNotice } from "@/components/planner/level-up";
 import { TabTour } from "@/components/planner/tab-tour";
 import { TimeZoneCheck } from "@/components/planner/time-zone-check";
 import { TabBar } from "@/components/ui/tab-bar";
@@ -39,6 +40,10 @@ export default async function TabsLayout({ children }: { children: React.ReactNo
       inviteCode: data.inviteCode,
       hangouts: data.hangouts,
       hasAcceptedHangout: data.hasAcceptedHangout,
+      flameStyle: data.flameStyle,
+      title: data.title,
+      leaderboard: data.leaderboard,
+      missed: data.missed,
       prefs: {
         notifyUpcoming: data.settings.notifyUpcoming,
         notifyMissed: data.settings.notifyMissed,
@@ -63,6 +68,8 @@ export default async function TabsLayout({ children }: { children: React.ReactNo
         <TimeZoneCheck />
         {children}
         <TabBar />
+        <LevelUp />
+        <MissedNotice />
         <TabTour accountTourDone={account ? account.tourDone : null} />
       </PlannerProvider>
     </AccountProvider>
