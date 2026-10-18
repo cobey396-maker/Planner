@@ -10,7 +10,9 @@ import {
   passwordResetSchema,
   signInSchema,
   signUpSchema,
+  username,
 } from "@/lib/auth/schema";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { isValidTimeZone } from "@/lib/time";
 
@@ -37,8 +39,23 @@ async function appOrigin(): Promise<string> {
   return h.get("origin") ?? process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3002";
 }
 
+/**
+ * Is this username free? Called (debounced) while typing on the sign-up form
+ * and in Settings. Demo mode has no shared database, so everything is free.
+ */
+export async function checkUsernameAction(name: string): Promise<{ available: boolean; error?: string }> {
+  const parsed = username.safeParse(name);
+  if (!parsed.success) return { available: false, error: parsed.error.issues[0]?.message };
+  const supabase = await createClient();
+  if (!supabase) return { available: true };
+  const { data, error } = await supabase.rpc("username_available", { name: parsed.data });
+  if (error) return { available: false, error: "Couldn't check right now" };
+  return data ? { available: true } : { available: false, error: "That username is taken" };
+}
+
 export async function signUpAction(input: {
   name: string;
+  username: string;
   email: string;
   password: string;
   timeZone?: string;
@@ -51,12 +68,21 @@ export async function signUpAction(input: {
   if (!supabase) return NOT_CONFIGURED;
 
   const { name, email, password } = parsed.data;
+  // Check again on the server (the form's check can be skipped or stale).
+  const free = await checkUsernameAction(parsed.data.username);
+  if (!free.available) {
+    return { ok: false, error: "Please fix the highlighted fields.", fieldErrors: { username: free.error ?? "That username is taken" } };
+  }
   const { data, error } = await supabase.auth.signUp({
     email,
     password,
     options: {
       // Read by the handle_new_user() database trigger to create the profile.
-      data: { display_name: name, time_zone: isValidTimeZone(input.timeZone) ? input.timeZone : "UTC" },
+      data: {
+        display_name: name,
+        username: parsed.data.username,
+        time_zone: isValidTimeZone(input.timeZone) ? input.timeZone : "UTC",
+      },
       emailRedirectTo: `${await appOrigin()}/auth/callback?next=/onboarding`,
     },
   });
@@ -70,7 +96,10 @@ export async function signUpAction(input: {
   return { ok: true, next: "/onboarding" };
 }
 
-export async function signInAction(input: { email: string; password: string }): Promise<AuthResult> {
+const WRONG_LOGIN: AuthResult = { ok: false, error: "That email/username or password is incorrect." };
+
+/** Log in with an email or a @username, plus the password. */
+export async function signInAction(input: { identifier: string; password: string }): Promise<AuthResult> {
   const parsed = signInSchema.safeParse(input);
   if (!parsed.success) {
     return { ok: false, error: "Please fix the highlighted fields.", fieldErrors: fieldErrors(parsed.error) };
@@ -78,8 +107,23 @@ export async function signInAction(input: { email: string; password: string }): 
   const supabase = await createClient();
   if (!supabase) return NOT_CONFIGURED;
 
-  const { error } = await supabase.auth.signInWithPassword(parsed.data);
-  if (error) return { ok: false, error: friendlyAuthError(error) };
+  let email = parsed.data.identifier;
+  if (!email.includes("@")) {
+    // Usernames are public but emails aren't, so only the server (with the
+    // secret key) may look up the email behind a username.
+    const admin = createAdminClient();
+    if (!admin) {
+      return { ok: false, error: "Logging in with a username isn't set up on this server yet. Use your email." };
+    }
+    const { data } = await admin.rpc("email_for_username", { name: email });
+    // Same answer for "no such user" and "wrong password", so nobody can
+    // find out which usernames exist by trying to log in.
+    if (!data) return WRONG_LOGIN;
+    email = data as string;
+  }
+
+  const { error } = await supabase.auth.signInWithPassword({ email, password: parsed.data.password });
+  if (error) return error.code === "invalid_credentials" ? WRONG_LOGIN : { ok: false, error: friendlyAuthError(error) };
   // The middleware sends people who haven't onboarded to /onboarding.
   return { ok: true, next: "/today" };
 }

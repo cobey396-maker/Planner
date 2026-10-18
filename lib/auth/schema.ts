@@ -23,14 +23,34 @@ const newPassword = z
   .regex(/[A-Za-z]/, "Add at least one letter")
   .regex(/\d/, "Add at least one number");
 
+/** Matches the database rule (profiles.handle) plus the reserved prefix. */
+export const USERNAME_PATTERN = /^[a-z0-9_]{3,20}$/;
+
+/** Your public @username: 3-20 lowercase letters, numbers or _. */
+export const username = z
+  .string()
+  .trim()
+  .toLowerCase()
+  .min(3, "At least 3 characters")
+  .max(20, "At most 20 characters")
+  .regex(/^[a-z0-9_]*$/, "Use only letters, numbers and _")
+  .refine((v) => !v.startsWith("user_"), "That one's reserved. Try another");
+
 export const signUpSchema = z.object({
   name: z.string().trim().min(1, "What should we call you?").max(50, "Keep it under 50 characters"),
+  username,
   email,
   password: newPassword,
 });
 
 export const signInSchema = z.object({
-  email,
+  // Log in with either your email or your @username.
+  identifier: z
+    .string()
+    .trim()
+    .min(1, "Enter your email or username")
+    .transform((v) => v.replace(/^@/, "").toLowerCase())
+    .refine((v) => (v.includes("@") ? z.email().safeParse(v).success : USERNAME_PATTERN.test(v)), "Enter a valid email or username"),
   // On sign-in we only check it's present: the rules belong to sign-up.
   password: z.string().min(1, "Enter your password"),
 });
@@ -58,7 +78,7 @@ export const onboardingSchema = z.object({
   region: place,
 });
 
-export const profileSchema = onboardingSchema.omit({ timeZone: true });
+export const profileSchema = onboardingSchema.omit({ timeZone: true }).extend({ username: username.optional() });
 
 export type OnboardingInput = z.infer<typeof onboardingSchema>;
 export type SignUpInput = z.infer<typeof signUpSchema>;

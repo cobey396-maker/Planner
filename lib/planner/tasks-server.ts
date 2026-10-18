@@ -76,12 +76,13 @@ export function toPlannedBlock(b: BlockRow): PlannedBlock {
 
 /** Blocks starting in [start, end), oldest first. */
 export async function blocksBetween(supabase: Supabase, start: number, end: number): Promise<PlannedBlock[]> {
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from("blocks")
     .select(BLOCK_FIELDS)
     .gte("starts_at", new Date(start).toISOString())
     .lt("starts_at", new Date(end).toISOString())
     .order("starts_at");
+  if (error) console.error("[planner] loading blocks failed:", error.code, error.message);
   return ((data ?? []) as unknown as BlockRow[]).map(toPlannedBlock);
 }
 
@@ -122,7 +123,11 @@ export async function createTask(
     await supabase.rpc("ensure_my_account");
     task = await insertTask();
   }
-  if (task.error || !task.data) return { ok: false, error: "Couldn't save the task. Please try again." };
+  if (task.error || !task.data) {
+    // Printed in the terminal running the app, to help diagnose problems.
+    console.error("[planner] saving a task failed:", task.error?.code, task.error?.message);
+    return { ok: false, error: "Couldn't save the task. Please try again." };
+  }
   const taskId = (task.data as { id: string }).id;
 
   const { data: rows, error } = await supabase
@@ -137,6 +142,7 @@ export async function createTask(
     )
     .select("id, starts_at");
   if (error || !rows) {
+    console.error("[planner] saving blocks failed:", error?.code, error?.message);
     // Undo the task so we don't leave an orphan (e.g. another tab grabbed
     // the same time a split second earlier: the no-overlap rule caught it).
     await supabase.from("tasks").delete().eq("id", taskId);

@@ -617,3 +617,27 @@ network/server logs for the failing request, and read the actual error (here
 a foreign-key violation). Then fix the root cause, repair existing bad data,
 add a self-healing path, make the error visible, and add a test that fails
 without the fix.
+
+## Update: usernames, log in, and keeping the schedule in sync
+
+**Usernames.** Picked at sign-up, checked as you type. The check is
+*debounced* (we wait 400 ms after the last keystroke before asking the
+server) and ignores stale answers, so a slow reply for "cob" can't overwrite
+the answer for "cobey". The database is the real referee: a unique index
+means two people can never end up with the same name, even if they press
+"Create account" at the same instant.
+
+**Logging in with a username without leaking emails.** The browser never
+learns anyone's email: the server, using the secret key, swaps the username
+for an email and signs in. "No such user" and "wrong password" get the same
+message, so nobody can test which usernames exist by logging in.
+
+**Keeping every tab in sync.** After saving, the app now re-loads your
+schedule from the database (and again when you come back to the app), so
+the screen always matches what's actually saved. The server prints the real
+error in the terminal if a save fails.
+
+**Interview question: how do you build a "username available?" check?**
+Validate the format locally first, debounce the server call, ignore
+out-of-order responses, and still enforce uniqueness in the database
+(unique index) because the check can be stale by the time you submit.

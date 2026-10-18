@@ -42,7 +42,7 @@ function loadChat(): ChatMessage[] {
  * Needs an account (it works on your saved schedule) and, later, a paid plan.
  */
 export function HelperScreen({ configured, allowed }: { configured: boolean; allowed: boolean }) {
-  const { mode, replaceBlocks } = usePlanner();
+  const { mode, replaceBlocks, syncBlocks } = usePlanner();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
@@ -117,6 +117,8 @@ export function HelperScreen({ configured, allowed }: { configured: boolean; all
     } catch (e) {
       setError(e instanceof Error ? e.message : "Couldn't reach the server.");
     } finally {
+      // Whatever happened, make every tab match what's saved now.
+      void syncBlocks();
       setBusy(false);
       setActivity(null);
       // Drop an empty reply bubble if nothing came back.

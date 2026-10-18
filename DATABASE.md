@@ -211,6 +211,18 @@ npm.cmd run db:migrate
 If the app shows "Your database needs an update", a migration hasn't been
 applied yet: run the command above and restart the app.
 
+## Migration 4: usernames
+
+Sign-up now asks for a username (3-20 lowercase letters, numbers or `_`),
+checked live as you type with `username_available()`. A few names are
+reserved (admin, support, …). Existing accounts keep their generated
+`user_…` name until they pick one in Settings → Edit profile.
+
+**Logging in with a username** needs the server's secret key, because only
+the server may look up the email behind a username (`email_for_username()`,
+service role only). Add `SUPABASE_SECRET_KEY` to `.env.local`
+(Supabase → Project Settings → API Keys → Secret keys). Without it, people log in with their email.
+
 ## Email notifications (after deploying)
 
 Reminders ("starts in 15 min"), missed-block notices and friend-request

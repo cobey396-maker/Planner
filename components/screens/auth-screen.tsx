@@ -5,10 +5,17 @@ import { AnimatePresence, motion } from "motion/react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useId, useState, type InputHTMLAttributes, type ReactNode } from "react";
+import { UsernameHint, useUsernameStatus } from "@/components/planner/username-check";
 import { Button } from "@/components/ui/button";
+import { SegmentedControl } from "@/components/ui/segmented-control";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
 import { useToast } from "@/components/ui/toast";
-import { requestPasswordResetAction, signInAction, signUpAction, type AuthResult } from "@/app/actions/auth";
+import {
+  requestPasswordResetAction,
+  signInAction,
+  signUpAction,
+  type AuthResult,
+} from "@/app/actions/auth";
 import { saveProfile } from "@/lib/auth/profile";
 import {
   fieldErrors,
@@ -23,7 +30,7 @@ import { APP_NAME } from "@/lib/config";
 import { fadeUp, fluid, stagger } from "@/lib/design/motion";
 
 type Mode = "signup" | "signin";
-type Values = { name: string; email: string; password: string };
+type Values = { name: string; username: string; email: string; password: string };
 
 const COPY = {
   signup: {
@@ -31,12 +38,12 @@ const COPY = {
     subtitle: "Tell it what you need to do. It plans your week.",
     submit: "Create account",
     switchPrompt: "Already have an account?",
-    switchAction: "Sign in",
+    switchAction: "Log in",
   },
   signin: {
     title: "Welcome back",
-    subtitle: "Pick up right where you left off.",
-    submit: "Sign in",
+    subtitle: "Log in to pick up right where you left off.",
+    submit: "Log in",
     switchPrompt: "New here?",
     switchAction: "Create an account",
   },
@@ -74,16 +81,26 @@ export function AuthScreen({
     linkError ? "That link has expired or was already used. Please try again." : null,
   );
   const [checkEmail, setCheckEmail] = useState<string | null>(null);
-  const [values, setValues] = useState<Values>({ name: "", email: "", password: "" });
+  const [values, setValues] = useState<Values>({ name: "", username: "", email: "", password: "" });
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [submitted, setSubmitted] = useState(false);
   const [busy, setBusy] = useState(false);
   const copy = COPY[mode];
 
   function validate(next: Values, m: Mode = mode) {
-    const result = (m === "signup" ? signUpSchema : signInSchema).safeParse(next);
-    return result.success ? {} : fieldErrors(result.error);
+    if (m === "signup") {
+      const result = signUpSchema.safeParse(next);
+      return result.success ? {} : fieldErrors(result.error);
+    }
+    // Logging in: the first field takes an email OR a username.
+    const result = signInSchema.safeParse({ identifier: next.email, password: next.password });
+    if (result.success) return {};
+    const { identifier, ...rest } = fieldErrors(result.error);
+    return identifier ? { ...rest, email: identifier } : rest;
   }
+
+  // Live "available / taken" check while signing up.
+  const usernameStatus = useUsernameStatus(values.username, { active: mode === "signup" });
 
   function update(field: keyof Values, value: string) {
     const next = { ...values, [field]: value };
@@ -98,8 +115,9 @@ export function AuthScreen({
     setErrors((prev) => (fieldError ? { ...prev, [field]: fieldError } : without(prev, field)));
   }
 
-  function switchMode() {
-    const next = mode === "signup" ? "signin" : "signup";
+  function switchMode(to?: Mode) {
+    const next = to ?? (mode === "signup" ? "signin" : "signup");
+    if (next === mode) return;
     setMode(next);
     setErrors({});
     setFormError(null);
@@ -110,6 +128,7 @@ export function AuthScreen({
     setSubmitted(true);
     setFormError(null);
     const found = validate(values);
+    if (mode === "signup" && usernameStatus.state === "taken") found.username = usernameStatus.message ?? "That username is taken";
     setErrors(found);
     if (Object.keys(found).length > 0) return;
 
@@ -119,7 +138,7 @@ export function AuthScreen({
     if (!authEnabled) {
       // DEMO MODE (no Supabase on this server): remember the name in this
       // browser only, so the app can greet you. No real account is created.
-      const name = mode === "signup" ? values.name.trim() : email.split("@")[0];
+      const name = mode === "signup" ? values.name.trim() : email.replace(/^@/, "").split("@")[0];
       saveProfile({ name, email });
       toast(mode === "signup" ? `Welcome, ${name.split(" ")[0]}!` : "Welcome back!");
       router.push("/demo");
@@ -133,14 +152,17 @@ export function AuthScreen({
       result =
         mode === "signup"
           ? await signUpAction({ ...values, timeZone })
-          : await signInAction({ email: values.email, password: values.password });
+          : await signInAction({ identifier: values.email, password: values.password });
     } catch {
       result = { ok: false, error: "Couldn't reach the server. Check your connection and try again." };
     }
 
     if (!result.ok) {
       setBusy(false);
-      if (result.fieldErrors) setErrors(result.fieldErrors);
+      if (result.fieldErrors) {
+        const { identifier, ...rest } = result.fieldErrors;
+        setErrors(identifier ? { ...rest, email: identifier } : rest);
+      }
       setFormError(result.error);
       return;
     }
@@ -228,6 +250,18 @@ export function AuthScreen({
           </AnimatePresence>
         </motion.div>
 
+        <motion.div variants={fadeUp} className="mb-5">
+          <SegmentedControl<Mode>
+            label="Sign up or log in"
+            value={mode}
+            onChange={(m) => switchMode(m)}
+            options={[
+              { value: "signup", label: "Sign up" },
+              { value: "signin", label: "Log in" },
+            ]}
+          />
+        </motion.div>
+
         <motion.div variants={fadeUp} className="flex flex-col gap-3">
           <SocialButton
             onClick={() => toast("Sign in with Apple arrives with accounts")}
@@ -281,18 +315,38 @@ export function AuthScreen({
                   placeholder="Alex Rivera"
                   maxLength={50}
                 />
+                <div className="mt-3">
+                  <Field
+                    label="Username"
+                    error={errors.username}
+                    value={values.username}
+                    onChange={(e) => update("username", e.target.value.replace(/\s/g, ""))}
+                    onBlur={() => blur("username")}
+                    autoComplete="username"
+                    autoCapitalize="none"
+                    spellCheck={false}
+                    placeholder="alex_r"
+                    maxLength={20}
+                    leading={
+                      <span aria-hidden className="text-body text-tertiary-label">
+                        @
+                      </span>
+                    }
+                  />
+                  {!errors.username && values.username.trim() !== "" && <UsernameHint status={usernameStatus} name={values.username} />}
+                </div>
               </motion.div>
             )}
           </AnimatePresence>
 
           <Field
-            label="Email"
-            type="email"
-            inputMode="email"
-            autoComplete="email"
+            label={mode === "signup" ? "Email" : "Email or username"}
+            type={mode === "signup" ? "email" : "text"}
+            inputMode={mode === "signup" ? "email" : "text"}
+            autoComplete={mode === "signup" ? "email" : "username"}
             autoCapitalize="none"
             spellCheck={false}
-            placeholder="you@example.com"
+            placeholder={mode === "signup" ? "you@example.com" : "you@example.com or @username"}
             error={errors.email}
             value={values.email}
             onChange={(e) => update("email", e.target.value)}
@@ -346,7 +400,7 @@ export function AuthScreen({
         <motion.div variants={fadeUp} className="mt-5 flex flex-col items-center gap-4 text-center">
           <p className="text-subhead text-secondary-label">
             {copy.switchPrompt}{" "}
-            <button type="button" onClick={switchMode} className="font-semibold text-tint">
+            <button type="button" onClick={() => switchMode()} className="font-semibold text-tint">
               {copy.switchAction}
             </button>
           </p>
@@ -383,8 +437,9 @@ function Field({
   label,
   error,
   trailing,
+  leading,
   ...input
-}: InputHTMLAttributes<HTMLInputElement> & { label: string; error?: string; trailing?: ReactNode }) {
+}: InputHTMLAttributes<HTMLInputElement> & { label: string; error?: string; trailing?: ReactNode; leading?: ReactNode }) {
   const id = useId();
   const errorId = `${id}-error`;
   return (
@@ -399,13 +454,16 @@ function Field({
       >
         <label htmlFor={id} className="flex min-w-0 flex-1 flex-col px-4 pb-2 pt-2.5">
           <span className="text-caption font-medium text-secondary-label">{label}</span>
-          <input
-            id={id}
-            aria-invalid={error ? true : undefined}
-            aria-describedby={error ? errorId : undefined}
-            className="w-full bg-transparent text-body outline-none placeholder:text-tertiary-label focus-visible:outline-none"
-            {...input}
-          />
+          <span className="flex items-center gap-0.5">
+            {leading}
+            <input
+              id={id}
+              aria-invalid={error ? true : undefined}
+              aria-describedby={error ? errorId : input["aria-describedby"]}
+              className="w-full bg-transparent text-body outline-none placeholder:text-tertiary-label focus-visible:outline-none"
+              {...input}
+            />
+          </span>
         </label>
         {trailing}
       </div>

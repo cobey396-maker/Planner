@@ -7,6 +7,7 @@ import { useState, useSyncExternalStore } from "react";
 import { signOutAction } from "@/app/actions/auth";
 import { removeAvatarAction, saveSettingsAction, updateProfileAction, uploadAvatarAction } from "@/app/actions/profile";
 import { PlaceFields } from "@/components/planner/place-fields";
+import { UsernameHint, useUsernameStatus } from "@/components/planner/username-check";
 import { useTheme } from "@/components/providers";
 import { Avatar } from "@/components/ui/avatar";
 import { AvatarPicker } from "@/components/ui/avatar-picker";
@@ -71,6 +72,11 @@ export function SettingsScreen() {
             <Avatar name={name} color={profile?.avatarColor ?? "blue"} src={profile?.avatarUrl} size={60} />
             <div className="min-w-0 flex-1">
               <div className="truncate text-title3">{name}</div>
+              {profile?.handle && !profile.handle.startsWith("user_") && (
+                <div className="truncate text-subhead text-tint" data-testid="my-username">
+                  @{profile.handle}
+                </div>
+              )}
               <div className="truncate text-subhead text-secondary-label">
                 {account ? account.email : localProfile ? `${localProfile.email} · demo` : "Exploring without an account"}
               </div>
@@ -313,6 +319,8 @@ function EditProfileSheet({ open, onOpenChange }: { open: boolean; onOpenChange:
   const toast = useToast();
   const { profile, setProfile } = usePlanner();
   const [name, setName] = useState(profile?.displayName ?? "");
+  const [handle, setHandle] = useState(profile?.handle ?? "");
+  const handleStatus = useUsernameStatus(handle, { unchanged: handle.trim().toLowerCase() === profile?.handle });
   const [city, setCity] = useState(profile?.city ?? "");
   const [region, setRegion] = useState(profile?.region ?? "");
   const [uploading, setUploading] = useState(false);
@@ -339,8 +347,18 @@ function EditProfileSheet({ open, onOpenChange }: { open: boolean; onOpenChange:
 
   async function save() {
     if (!profile) return;
+    if (handleStatus.state === "taken" || handleStatus.state === "invalid") {
+      toast(handleStatus.message ?? "Pick another username");
+      return;
+    }
     setSaving(true);
-    const res = await updateProfileAction({ displayName: name, city, region }).catch(() => ({
+    const newHandle = handle.trim().toLowerCase();
+    const res = await updateProfileAction({
+      displayName: name,
+      city,
+      region,
+      ...(newHandle !== profile.handle ? { username: newHandle } : {}),
+    }).catch(() => ({
       ok: false as const,
       error: "Couldn't reach the server.",
     }));
@@ -349,7 +367,7 @@ function EditProfileSheet({ open, onOpenChange }: { open: boolean; onOpenChange:
       toast(res.error);
       return;
     }
-    setProfile({ ...profile, displayName: name.trim(), city: city.trim() || null, region: region || null });
+    setProfile({ ...profile, displayName: name.trim(), handle: newHandle, city: city.trim() || null, region: region || null });
     toast("Profile saved");
     onOpenChange(false);
   }
@@ -374,6 +392,26 @@ function EditProfileSheet({ open, onOpenChange }: { open: boolean; onOpenChange:
             className="min-w-0 flex-1 bg-transparent text-body outline-none placeholder:text-tertiary-label"
           />
         </label>
+        <div>
+          <label className="glass-card flex items-center gap-0.5 rounded-2xl px-4 py-3">
+            <span className="sr-only">Username</span>
+            <span aria-hidden className="text-body text-tertiary-label">
+              @
+            </span>
+            <input
+              value={handle.startsWith("user_") ? "" : handle}
+              onChange={(e) => setHandle(e.target.value.replace(/\s/g, ""))}
+              maxLength={20}
+              autoCapitalize="none"
+              spellCheck={false}
+              autoComplete="username"
+              placeholder="pick a username"
+              aria-label="Username"
+              className="min-w-0 flex-1 bg-transparent text-body outline-none placeholder:text-tertiary-label"
+            />
+          </label>
+          {handle.trim() !== "" && !handle.startsWith("user_") && <UsernameHint status={handleStatus} name={handle} />}
+        </div>
         <PlaceFields city={city} region={region} onCity={setCity} onRegion={setRegion} />
         <Button size="lg" disabled={saving || name.trim().length === 0} onClick={() => void save()}>
           Save

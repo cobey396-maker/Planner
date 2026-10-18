@@ -22,10 +22,11 @@ export async function updateProfileAction(input: z.input<typeof profileSchema>):
   const session = await signedIn();
   if (!session) return SESSION_EXPIRED;
   const v = parsed.data;
-  const { error } = await session.supabase
-    .from("profiles")
-    .update({ display_name: v.displayName, city: v.city, region: v.region })
-    .eq("id", session.userId);
+  const row: Record<string, unknown> = { display_name: v.displayName, city: v.city, region: v.region };
+  if (v.username) row.handle = v.username;
+  const { error } = await session.supabase.from("profiles").update(row).eq("id", session.userId);
+  if (error?.code === "23505") return { ok: false, error: "That username is taken.", fieldErrors: { username: "That username is taken" } };
+  if (error?.code === "23514") return { ok: false, error: "That username isn't allowed.", fieldErrors: { username: "Try another username" } };
   if (error) return { ok: false, error: "Couldn't save your profile." };
   await session.supabase.auth.updateUser({ data: { display_name: v.displayName } });
   await session.supabase.auth.refreshSession();

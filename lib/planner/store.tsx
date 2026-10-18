@@ -1,9 +1,10 @@
 "use client";
 
-import { createContext, useCallback, useContext, useMemo, useState, useSyncExternalStore, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, useSyncExternalStore, type ReactNode } from "react";
 import {
   createTaskAction,
   deleteBlockAction,
+  loadBlocksAction,
   deleteTaskAction,
   friendBusyAction,
   requestFriendAction,
@@ -95,6 +96,8 @@ type PlannerValue = {
   deleteBlock: (blockId: string) => Promise<Result>;
   /** Replace all blocks with fresh ones from the server (after the Schedule Helper edits). */
   replaceBlocks: (blocks: PlannedBlock[]) => void;
+  /** Reload the schedule from the database. */
+  syncBlocks: () => Promise<PlannedBlock[] | null>;
   setDone: (blockId: string, done: boolean) => Promise<Result>;
   deleteTask: (taskId: string) => Promise<Result>;
   setWeekStartsOn: (value: 1 | 7) => Promise<void>;
@@ -123,7 +126,8 @@ const offline = { ok: false as const, error: "Couldn't reach the server. Check y
 async function safely<T>(fn: () => Promise<T>): Promise<T | typeof offline> {
   try {
     return await fn();
-  } catch {
+  } catch (error) {
+    console.error("[planner] request failed:", error);
     return offline;
   }
 }
@@ -154,12 +158,52 @@ export function PlannerProvider({ initial, mode, children }: { initial: InitialP
     [mode, prefs],
   );
 
+  /**
+   * Re-load the schedule from the database, so the screen always matches
+   * what's actually saved (after adding, after the Schedule Helper, and when
+   * you come back to the app).
+   */
+  const syncBlocks = useCallback(async (): Promise<PlannedBlock[] | null> => {
+    if (mode !== "remote") return null;
+    const result = await safely(() => loadBlocksAction());
+    if (!result.ok) return null;
+    setBlocks([...result.blocks].sort((a, b) => a.startsAt - b.startsAt));
+    return result.blocks;
+  }, [mode]);
+
+  // Coming back to the tab/app: refresh (at most every 15 seconds).
+  useEffect(() => {
+    if (mode !== "remote") return;
+    let last = Date.now();
+    const onVisible = () => {
+      if (document.visibilityState !== "visible" || Date.now() - last < 15_000) return;
+      last = Date.now();
+      void syncBlocks();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", onVisible);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("focus", onVisible);
+    };
+  }, [mode, syncBlocks]);
+
   const addTask = useCallback(
     async (input: NewTaskInput): Promise<Result<{ blocks: PlannedBlock[]; skipped: SkippedDay[] }>> => {
-      const add = (added: PlannedBlock[]) => setBlocks((prev) => [...prev, ...added].sort((a, b) => a.startsAt - b.startsAt));
+      const add = (added: PlannedBlock[]) =>
+        setBlocks((prev) => {
+          const known = new Set(prev.map((b) => b.id));
+          return [...prev, ...added.filter((b) => !known.has(b.id))].sort((a, b) => a.startsAt - b.startsAt);
+        });
       if (mode === "remote") {
         const result = await safely(() => createTaskAction(input));
-        if (result.ok) add(result.blocks);
+        if (!result.ok) return result;
+        add(result.blocks); // show it right away…
+        const saved = await syncBlocks(); // …then confirm against the database.
+        if (saved && !result.blocks.every((b) => saved.some((s) => s.id === b.id))) {
+          console.error("[planner] the new task wasn't found after saving", result.blocks);
+          add(result.blocks);
+        }
         return result;
       }
       // Demo mode: the same placement rules, run in the browser.
@@ -186,7 +230,7 @@ export function PlannerProvider({ initial, mode, children }: { initial: InitialP
       add(added);
       return { ok: true, blocks: added, skipped };
     },
-    [mode, blocks, timeZone],
+    [mode, blocks, timeZone, syncBlocks],
   );
 
   const deleteBlock = useCallback(
@@ -318,6 +362,7 @@ export function PlannerProvider({ initial, mode, children }: { initial: InitialP
       addTask,
       deleteBlock,
       replaceBlocks,
+      syncBlocks,
       setDone,
       deleteTask,
       setWeekStartsOn,
@@ -332,7 +377,7 @@ export function PlannerProvider({ initial, mode, children }: { initial: InitialP
     }),
     [
       mode, timeZone, weekStartsOn, profile, blocks, pointsTotal, friends, requests, suggestions, initial.inviteCode,
-      hangouts, hasAcceptedHangout, addTask, deleteBlock, replaceBlocks, setDone, deleteTask, setWeekStartsOn, respondRequest, requestFriend,
+      hangouts, hasAcceptedHangout, addTask, deleteBlock, replaceBlocks, syncBlocks, setDone, deleteTask, setWeekStartsOn, respondRequest, requestFriend,
       friendBusy, sendHangout, respondHangout, prefs, setPrefs,
     ],
   );

@@ -17,11 +17,16 @@ const fake = {
     refreshSession: vi.fn(),
   },
   from: vi.fn(),
+  rpc: vi.fn(),
 };
+/** The server-only client (secret key), used to look up a username's email. */
+const admin = { rpc: vi.fn() };
+let adminConfigured = true;
 let configured = true;
 const cookieJar = { delete: vi.fn(), get: vi.fn() };
 
 vi.mock("@/lib/supabase/server", () => ({ createClient: async () => (configured ? fake : null) }));
+vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: () => (adminConfigured ? admin : null) }));
 vi.mock("next/headers", () => ({
   headers: async () => new Headers({ origin: "https://planner.test" }),
   cookies: async () => cookieJar,
@@ -32,21 +37,32 @@ vi.mock("next/navigation", () => ({
   },
 }));
 
-const { signUpAction, signInAction, signOutAction, requestPasswordResetAction, updatePasswordAction } =
+const { signUpAction, signInAction, signOutAction, requestPasswordResetAction, updatePasswordAction, checkUsernameAction } =
   await import("@/app/actions/auth");
 const { saveOnboardingAction } = await import("@/app/actions/onboarding");
 
 beforeEach(() => {
   vi.clearAllMocks();
   configured = true;
+  adminConfigured = true;
+  fake.rpc.mockResolvedValue({ data: true, error: null }); // usernames are free unless a test says otherwise
 });
 
-const goodSignUp = { name: " Cobey ", email: "Cobey@Example.com", password: "Planner123", timeZone: "America/Chicago" };
+const goodSignUp = {
+  name: " Cobey ",
+  username: "Cobey_D",
+  email: "Cobey@Example.com",
+  password: "Planner123",
+  timeZone: "America/Chicago",
+};
 
 describe("signUpAction", () => {
   it("re-validates on the server and never calls Supabase with bad input", async () => {
-    const result = await signUpAction({ name: "", email: "nope", password: "short" });
-    expect(result).toMatchObject({ ok: false, fieldErrors: { name: expect.any(String), email: expect.any(String) } });
+    const result = await signUpAction({ name: "", username: "a b", email: "nope", password: "short" });
+    expect(result).toMatchObject({
+      ok: false,
+      fieldErrors: { name: expect.any(String), username: expect.any(String), email: expect.any(String) },
+    });
     expect(fake.auth.signUp).not.toHaveBeenCalled();
   });
 
@@ -57,10 +73,17 @@ describe("signUpAction", () => {
       email: "cobey@example.com",
       password: "Planner123",
       options: {
-        data: { display_name: "Cobey", time_zone: "America/Chicago" },
+        data: { display_name: "Cobey", username: "cobey_d", time_zone: "America/Chicago" },
         emailRedirectTo: "https://planner.test/auth/callback?next=/onboarding",
       },
     });
+  });
+
+  it("refuses a username that's already taken (checked again on the server)", async () => {
+    fake.rpc.mockResolvedValue({ data: false, error: null });
+    expect(await signUpAction(goodSignUp)).toMatchObject({ ok: false, fieldErrors: { username: "That username is taken" } });
+    expect(fake.rpc).toHaveBeenCalledWith("username_available", { name: "cobey_d" });
+    expect(fake.auth.signUp).not.toHaveBeenCalled();
   });
 
   it("falls back to UTC for an invalid time zone", async () => {
@@ -86,17 +109,43 @@ describe("signUpAction", () => {
 });
 
 describe("signInAction", () => {
-  it("signs in and heads to Today", async () => {
+  it("logs in with an email and heads to Today", async () => {
     fake.auth.signInWithPassword.mockResolvedValue({ error: null });
-    expect(await signInAction({ email: "a@b.co", password: "x" })).toEqual({ ok: true, next: "/today" });
+    expect(await signInAction({ identifier: " A@B.co ", password: "x" })).toEqual({ ok: true, next: "/today" });
+    expect(fake.auth.signInWithPassword).toHaveBeenCalledWith({ email: "a@b.co", password: "x" });
   });
 
-  it("doesn't reveal whether it was the email or the password that was wrong", async () => {
+  it("logs in with a @username: the server looks up the email", async () => {
+    admin.rpc.mockResolvedValue({ data: "cobey@example.com", error: null });
+    fake.auth.signInWithPassword.mockResolvedValue({ error: null });
+    expect(await signInAction({ identifier: "@Cobey_D", password: "x" })).toEqual({ ok: true, next: "/today" });
+    expect(admin.rpc).toHaveBeenCalledWith("email_for_username", { name: "cobey_d" });
+    expect(fake.auth.signInWithPassword).toHaveBeenCalledWith({ email: "cobey@example.com", password: "x" });
+  });
+
+  it("an unknown username gets the same answer as a wrong password", async () => {
+    admin.rpc.mockResolvedValue({ data: null, error: null });
+    const unknown = await signInAction({ identifier: "nobody", password: "x" });
     fake.auth.signInWithPassword.mockResolvedValue({ error: { code: "invalid_credentials", status: 400 } });
-    expect(await signInAction({ email: "a@b.co", password: "x" })).toEqual({
-      ok: false,
-      error: "Email or password is incorrect.",
-    });
+    const wrong = await signInAction({ identifier: "a@b.co", password: "x" });
+    expect(unknown).toEqual(wrong);
+    expect(wrong).toEqual({ ok: false, error: "That email/username or password is incorrect." });
+  });
+
+  it("explains when username login isn't set up (no secret key on the server)", async () => {
+    adminConfigured = false;
+    expect(await signInAction({ identifier: "cobey_d", password: "x" })).toMatchObject({ ok: false, error: expect.stringMatching(/Use your email/) });
+  });
+});
+
+describe("checkUsernameAction", () => {
+  it("checks the format first, then asks the database", async () => {
+    expect(await checkUsernameAction("no")).toMatchObject({ available: false });
+    expect(fake.rpc).not.toHaveBeenCalled();
+    fake.rpc.mockResolvedValue({ data: false, error: null });
+    expect(await checkUsernameAction("Taken_Name")).toEqual({ available: false, error: "That username is taken" });
+    fake.rpc.mockResolvedValue({ data: true, error: null });
+    expect(await checkUsernameAction("free_name")).toEqual({ available: true });
   });
 });
 

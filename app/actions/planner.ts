@@ -4,7 +4,7 @@ import { z } from "zod";
 import { appUrl, sendEmail } from "@/lib/email/send";
 import { friendRequestEmail } from "@/lib/email/templates";
 import type { SkippedDay } from "@/lib/planner/placement";
-import { createTask, deleteBlock, deleteTask, setBlockDone, type NewTaskInput } from "@/lib/planner/tasks-server";
+import { blocksBetween, createTask, deleteBlock, deleteTask, setBlockDone, type NewTaskInput } from "@/lib/planner/tasks-server";
 import type { Interval, PlannedBlock } from "@/lib/planner/types";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
@@ -49,6 +49,18 @@ export async function deleteTaskAction(taskId: string): Promise<Result> {
   const session = await signedIn();
   if (!session) return SESSION_EXPIRED;
   return deleteTask(session.supabase, taskId);
+}
+
+/**
+ * Your blocks from the database (the past ~400 days and the next ~400), so
+ * every tab can re-sync with what's actually saved.
+ */
+export async function loadBlocksAction(): Promise<Result<{ blocks: PlannedBlock[] }>> {
+  const session = await signedIn();
+  if (!session) return SESSION_EXPIRED;
+  const now = Date.now();
+  const blocks = await blocksBetween(session.supabase, now - 400 * 86_400_000, now + 400 * 86_400_000);
+  return { ok: true, blocks };
 }
 
 /** Delete just one occurrence. */

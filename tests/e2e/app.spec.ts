@@ -229,8 +229,14 @@ test("sign-up validates the form, then welcomes you into the app", async ({ page
   await expect(page.getByText("Enter a valid email, like you@example.com")).toBeVisible();
 
   // Errors clear as soon as each field is fixed.
-  await page.getByLabel("Name").fill("Cobey");
+  await page.getByLabel("Name", { exact: true }).fill("Cobey");
   await expect(page.getByText("What should we call you?")).toHaveCount(0);
+
+  // Usernames are checked as you type.
+  await page.getByRole("textbox", { name: "Username", exact: true }).fill("ab");
+  await expect(page.getByText("At least 3 characters")).toBeVisible();
+  await page.getByRole("textbox", { name: "Username", exact: true }).fill("Cobey_D");
+  await expect(page.getByTestId("username-status")).toHaveText("@cobey_d is available");
   await page.getByLabel("Email").fill("Cobey@Example.com");
   await page.getByLabel("Password", { exact: true }).fill("short");
   await expect(page.getByText("Use at least 8 characters")).toBeVisible();
@@ -249,12 +255,21 @@ test("sign-up validates the form, then welcomes you into the app", async ({ page
   expect(errors).toEqual([]);
 });
 
-test("switching to sign in hides the name field", async ({ page }) => {
+test("Log in: one tap away, and it takes an email or a username", async ({ page }) => {
   await openAt(page, "/");
-  await page.getByRole("button", { name: "Sign in" }).click();
+  await page.getByRole("radio", { name: "Log in" }).click();
   await expect(page.getByRole("heading", { name: "Welcome back" })).toBeVisible();
-  await expect(page.getByLabel("Name")).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "Sign in", exact: true })).toBeVisible();
+  await expect(page.getByLabel("Name", { exact: true })).toHaveCount(0);
+  await expect(page.getByRole("textbox", { name: "Username", exact: true })).toHaveCount(0);
+  const who = page.getByLabel("Email or username");
+  await who.fill("a b");
+  await page.getByRole("button", { name: "Log in", exact: true }).click();
+  await expect(page.getByText("Enter a valid email or username")).toBeVisible();
+  await who.fill("@cobey_d");
+  await expect(page.getByText("Enter a valid email or username")).toHaveCount(0);
+  // And back to sign-up.
+  await page.getByRole("radio", { name: "Sign up" }).click();
+  await expect(page.getByRole("heading", { name: "Create your account" })).toBeVisible();
 });
 
 test("onboarding asks name, photo (skippable) and place, with no planning hours", async ({ page }) => {
