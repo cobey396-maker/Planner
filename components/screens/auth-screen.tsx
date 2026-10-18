@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowRight, Eye, EyeOff, Loader2 } from "lucide-react";
+import { ArrowRight, Eye, EyeOff, Loader2, MailCheck } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -8,6 +8,7 @@ import { useId, useState, type InputHTMLAttributes, type ReactNode } from "react
 import { Button } from "@/components/ui/button";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
 import { useToast } from "@/components/ui/toast";
+import { requestPasswordResetAction, signInAction, signUpAction, type AuthResult } from "@/app/actions/auth";
 import { saveProfile } from "@/lib/auth/profile";
 import {
   fieldErrors,
@@ -57,10 +58,22 @@ const COPY = {
  * `submit` validates exactly as it will then, remembers your name locally so
  * the app can greet you, and continues into the app.
  */
-export function AuthScreen() {
+export function AuthScreen({
+  authEnabled,
+  linkError = false,
+}: {
+  /** Supabase is configured: real accounts. Otherwise demo mode. */
+  authEnabled: boolean;
+  /** Arrived from an expired or already-used email link. */
+  linkError?: boolean;
+}) {
   const router = useRouter();
   const toast = useToast();
   const [mode, setMode] = useState<Mode>("signup");
+  const [formError, setFormError] = useState<string | null>(
+    linkError ? "That link has expired or was already used. Please try again." : null,
+  );
+  const [checkEmail, setCheckEmail] = useState<string | null>(null);
   const [values, setValues] = useState<Values>({ name: "", email: "", password: "" });
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [submitted, setSubmitted] = useState(false);
@@ -89,23 +102,95 @@ export function AuthScreen() {
     const next = mode === "signup" ? "signin" : "signup";
     setMode(next);
     setErrors({});
+    setFormError(null);
     setSubmitted(false);
   }
 
-  function submit() {
+  async function submit() {
     setSubmitted(true);
+    setFormError(null);
     const found = validate(values);
     setErrors(found);
     if (Object.keys(found).length > 0) return;
 
     setBusy(true);
-    // PHASE 3: replace with supabase.auth.signUp / signInWithPassword and
-    // show the server's error (e.g. "email already registered") on failure.
     const email = values.email.trim().toLowerCase();
-    const name = mode === "signup" ? values.name.trim() : email.split("@")[0];
-    saveProfile({ name, email });
-    toast(mode === "signup" ? `Welcome, ${name.split(" ")[0]}!` : "Welcome back!");
-    router.push("/today");
+
+    if (!authEnabled) {
+      // DEMO MODE (no Supabase on this server): remember the name in this
+      // browser only, so the app can greet you. No real account is created.
+      const name = mode === "signup" ? values.name.trim() : email.split("@")[0];
+      saveProfile({ name, email });
+      toast(mode === "signup" ? `Welcome, ${name.split(" ")[0]}!` : "Welcome back!");
+      router.push("/demo");
+      return;
+    }
+
+    // Real accounts: the server action validates again and talks to Supabase.
+    const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    let result: AuthResult;
+    try {
+      result =
+        mode === "signup"
+          ? await signUpAction({ ...values, timeZone })
+          : await signInAction({ email: values.email, password: values.password });
+    } catch {
+      result = { ok: false, error: "Couldn't reach the server. Check your connection and try again." };
+    }
+
+    if (!result.ok) {
+      setBusy(false);
+      if (result.fieldErrors) setErrors(result.fieldErrors);
+      setFormError(result.error);
+      return;
+    }
+    if ("checkEmail" in result) {
+      setBusy(false);
+      setCheckEmail(result.checkEmail);
+      return;
+    }
+    toast(mode === "signup" ? `Welcome, ${values.name.trim().split(" ")[0]}!` : "Welcome back!");
+    router.push(result.next);
+    router.refresh();
+  }
+
+  async function forgotPassword() {
+    if (!authEnabled) {
+      toast("Password reset needs accounts to be set up");
+      return;
+    }
+    const result = await requestPasswordResetAction({ email: values.email });
+    if (!result.ok) {
+      setErrors((prev) => ({ ...prev, email: result.fieldErrors?.email ?? result.error }));
+      return;
+    }
+    toast("If that email has an account, a reset link is on its way");
+  }
+
+  if (checkEmail) {
+    return (
+      <main className="pt-safe pb-safe mx-auto flex min-h-dvh max-w-md flex-col justify-center px-5">
+        <motion.div variants={fadeUp} initial="initial" animate="animate" className="glass-card rounded-card p-6 text-center">
+          <motion.div
+            className="mx-auto mb-4 grid size-16 place-items-center rounded-full bg-tint/12 text-tint"
+            initial={{ scale: 0.6, rotate: -12 }}
+            animate={{ scale: 1, rotate: 0 }}
+            transition={fluid}
+          >
+            <MailCheck aria-hidden size={30} />
+          </motion.div>
+          <h1 className="text-title2">Check your inbox</h1>
+          <p className="mt-2 text-body text-secondary-label">
+            We sent a link to <span className="font-semibold text-label">{checkEmail}</span>. Tap it to finish
+            creating your account.
+          </p>
+          <p className="mt-3 text-footnote text-tertiary-label">Nothing there? Check spam, or wait a minute.</p>
+          <Button variant="tinted" className="mt-5 rounded-full" onClick={() => setCheckEmail(null)}>
+            Use a different email
+          </Button>
+        </motion.div>
+      </main>
+    );
   }
 
   return (
@@ -172,7 +257,7 @@ export function AuthScreen() {
           aria-label={copy.title}
           onSubmit={(e) => {
             e.preventDefault();
-            submit();
+            void submit();
           }}
           className="flex flex-col gap-3"
         >
@@ -225,12 +310,27 @@ export function AuthScreen() {
           {mode === "signin" && (
             <button
               type="button"
-              onClick={() => toast("Password reset arrives with accounts")}
+              onClick={() => void forgotPassword()}
               className="self-end px-1 text-subhead text-tint"
             >
               Forgot password?
             </button>
           )}
+
+          <AnimatePresence initial={false}>
+            {formError && (
+              <motion.p
+                role="alert"
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: "auto" }}
+                exit={{ opacity: 0, height: 0 }}
+                transition={fluid}
+                className="overflow-hidden rounded-2xl bg-danger/10 px-4 py-3 text-subhead text-danger"
+              >
+                {formError}
+              </motion.p>
+            )}
+          </AnimatePresence>
 
           <Button type="submit" size="lg" className="mt-2 rounded-full" disabled={busy}>
             {busy ? (
@@ -255,7 +355,10 @@ export function AuthScreen() {
               By creating an account you agree to the {APP_NAME} Terms of Service and Privacy Policy.
             </p>
           )}
-          <Link href="/today" className="text-footnote font-medium text-secondary-label underline-offset-4 hover:underline">
+          {!authEnabled && (
+            <p className="text-caption text-tertiary-label">Demo mode: accounts aren&apos;t set up on this server.</p>
+          )}
+          <Link href="/demo" prefetch={false} className="text-footnote font-medium text-secondary-label underline-offset-4 hover:underline">
             Just looking? Explore with sample data
           </Link>
         </motion.div>

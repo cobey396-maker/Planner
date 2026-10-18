@@ -141,6 +141,41 @@ version.
 Useful commands: `npm run db:status` (which migrations have run) and
 `npm run db:studio` (browse data in Prisma Studio).
 
+## Accounts (Supabase Auth)
+
+The app uses Supabase Auth for sign-up and sign-in. Without the two public
+values below it runs in **demo mode** (no accounts, sample data only).
+
+1. **Keys:** in Supabase, open **Project Settings → API Keys** and copy the
+   **publishable key** (`sb_publishable_…`). Then either rerun the setup script
+   with `-SkipMigrate` (it asks for the key), or add to `.env.local`:
+   ```
+   NEXT_PUBLIC_SUPABASE_URL="https://YOUR-PROJECT-REF.supabase.co"
+   NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY="sb_publishable_..."
+   ```
+   Both are public by design (they ship to the browser). Never put the
+   **secret** key in a `NEXT_PUBLIC_` variable.
+2. **Where email links may send people:** **Authentication → URL
+   Configuration**: set **Site URL** to `http://localhost:3002` and add
+   `http://localhost:3002/**` under **Redirect URLs** (add your Vercel URL
+   too when you deploy).
+3. **Email confirmation:** on by default, so new users get a "confirm your
+   email" link before they can sign in. Supabase's built-in email service is
+   rate-limited (a few emails per hour), which is fine for testing. To
+   test quickly, you can turn **Confirm email** off under
+   **Authentication → Sign In / Providers → Email**.
+4. Restart `npm run dev`, then sign up at http://localhost:3002.
+
+How it fits together:
+
+| Piece | Job |
+| --- | --- |
+| `middleware.ts` | Refreshes the session cookie on every request and applies `routeFor()` (signed-out → `/`, not onboarded → `/onboarding`). |
+| `lib/auth/routing.ts` | The access rules, as a pure function with unit tests. |
+| `app/actions/auth.ts`, `app/actions/onboarding.ts` | Server actions: validate with zod again, call Supabase, return friendly errors. |
+| `app/auth/callback/route.ts` | Where email links land; exchanges the one-time code for a session. |
+| `lib/auth/session.ts` | `getAccount()`: the verified user (`getClaims()`), for Server Components. |
+
 ## Changing the schema later
 
 1. Edit `prisma/schema.prisma`.

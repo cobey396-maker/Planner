@@ -118,6 +118,36 @@ test("switching to sign in hides the name field", async ({ page }) => {
   await expect(page.getByRole("button", { name: "Sign in", exact: true })).toBeVisible();
 });
 
+test("onboarding walks through name, time zone and hours, then celebrates", async ({ page }) => {
+  const errors = await openAt(page, "/onboarding");
+  await expect(page.getByRole("heading", { name: "What should we call you?" })).toBeVisible();
+  const next = page.getByRole("button", { name: "Continue" });
+  await expect(next).toBeDisabled(); // can't skip the name
+  await page.getByLabel("Your name").fill("Cobey");
+  await next.click();
+
+  await expect(page.getByRole("heading", { name: "Where are you?" })).toBeVisible();
+  // The browser's zone (set by the test) is detected and pre-selected.
+  await expect(page.getByRole("combobox")).toHaveValue("America/Chicago");
+  await page.getByRole("button", { name: "Continue" }).click();
+
+  await expect(page.getByRole("heading", { name: "When can we plan tasks?" })).toBeVisible();
+  await page.getByRole("button", { name: "8:00 AM" }).click();
+  await expect(page.getByText(/up to 14h a day/)).toBeVisible();
+
+  // Back keeps your answers.
+  await page.getByRole("button", { name: "Back" }).click();
+  await page.getByRole("button", { name: "Continue" }).click();
+  await expect(page.getByText(/up to 14h a day/)).toBeVisible();
+
+  await page.getByRole("button", { name: "Finish" }).click();
+  await expect(page.getByRole("heading", { name: "You're all set, Cobey!" })).toBeVisible();
+  await expect(page.locator("#confetti-canvas")).toHaveCount(1);
+  await page.getByRole("button", { name: "Plan my week" }).click();
+  await expect(page).toHaveURL(/\/today$/);
+  expect(errors).toEqual([]);
+});
+
 test("the theme switch in Settings flips the whole app", async ({ page }) => {
   await openAt(page, "/settings");
   await page.getByRole("radio", { name: "Dark" }).click();

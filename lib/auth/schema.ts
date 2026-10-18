@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { isValidTimeZone } from "@/lib/time";
 
 /**
  * SIGN-UP / SIGN-IN VALIDATION
@@ -34,6 +35,28 @@ export const signInSchema = z.object({
   password: z.string().min(1, "Enter your password"),
 });
 
+export const passwordResetSchema = z.object({ email });
+export const newPasswordSchema = z.object({ password: newPassword });
+
+/**
+ * Onboarding answers. Day window rules mirror the database's CHECK
+ * constraint (at least an hour, within one day), so the friendly error
+ * here fires before Postgres would reject it.
+ */
+export const onboardingSchema = z
+  .object({
+    displayName: z.string().trim().min(1, "What should we call you?").max(50, "Keep it under 50 characters"),
+    timeZone: z.string().refine(isValidTimeZone, "Pick a time zone from the list"),
+    dayStartMinute: z.number().int().min(0).max(1380),
+    dayEndMinute: z.number().int().min(60).max(1440),
+    weekStartsOn: z.union([z.literal(1), z.literal(7)]),
+  })
+  .refine((v) => v.dayEndMinute - v.dayStartMinute >= 180, {
+    message: "Give the planner at least 3 hours a day to work with",
+    path: ["dayEndMinute"],
+  });
+
+export type OnboardingInput = z.infer<typeof onboardingSchema>;
 export type SignUpInput = z.infer<typeof signUpSchema>;
 export type SignInInput = z.infer<typeof signInSchema>;
 

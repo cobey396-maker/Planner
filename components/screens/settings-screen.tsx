@@ -2,7 +2,6 @@
 
 import { Bell, CalendarClock, FileText, Globe, Moon, Palette, Shield, Sunrise, Users } from "lucide-react";
 import { motion } from "motion/react";
-import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { useTheme } from "@/components/providers";
 import { Avatar } from "@/components/ui/avatar";
@@ -12,6 +11,8 @@ import { Chip } from "@/components/ui/chip";
 import { LargeTitlePage } from "@/components/ui/large-title-page";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { Switch } from "@/components/ui/switch";
+import { signOutAction } from "@/app/actions/auth";
+import { useAccount } from "@/lib/auth/account-context";
 import { clearProfile, useProfile } from "@/lib/auth/profile";
 import { useEntrance } from "@/lib/design/entrance";
 import { fadeUp, stagger } from "@/lib/design/motion";
@@ -30,8 +31,10 @@ export function SettingsScreen() {
   const entrance = useEntrance();
   const now = useNow();
   const { preference, setPreference } = useTheme();
-  const router = useRouter();
-  const profile = useProfile();
+  const account = useAccount();
+  const localProfile = useProfile();
+  // A real account wins; otherwise the demo-mode name saved in this browser.
+  const profile = account ? { name: account.displayName, email: account.email } : localProfile;
   const [notify, setNotify] = useState({ upcoming: true, missed: true, friends: true, recap: false });
   const [lead, setLead] = useState(15);
   const [weekStart, setWeekStart] = useState<"mon" | "sun">("mon");
@@ -48,7 +51,7 @@ export function SettingsScreen() {
             <div className="min-w-0 flex-1">
               <div className="truncate text-title3">{profile?.name || "Guest"}</div>
               <div className="truncate text-subhead text-secondary-label">
-                {profile ? profile.email : "Exploring with sample data"}
+                {account ? account.email : profile ? `${profile.email} · demo` : "Exploring with sample data"}
               </div>
             </div>
           </Card>
@@ -215,14 +218,15 @@ export function SettingsScreen() {
 
         <motion.div variants={fadeUp} className="flex flex-col items-center gap-2">
           <Button
-            variant={profile ? "danger" : "filled"}
+            variant={account || profile ? "danger" : "filled"}
             size="lg"
             onClick={() => {
               clearProfile();
-              router.push("/");
+              // Signs out of Supabase, forgets demo mode, and redirects to "/".
+              void signOutAction();
             }}
           >
-            {profile ? "Sign out" : "Create an account"}
+            {account || profile ? "Sign out" : "Create an account"}
           </Button>
           <span className="text-caption text-tertiary-label">Auto-Planner 0.2 · preview build</span>
         </motion.div>

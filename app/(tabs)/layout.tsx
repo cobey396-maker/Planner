@@ -1,4 +1,6 @@
 import { TabBar } from "@/components/ui/tab-bar";
+import { AccountProvider } from "@/lib/auth/account-context";
+import { getAccount } from "@/lib/auth/session";
 import { PlannerProvider } from "@/lib/planner/store";
 
 /**
@@ -9,12 +11,18 @@ import { PlannerProvider } from "@/lib/planner/store";
  * A layout is NOT re-mounted when you navigate between its pages. That gives
  * us two things for free: planner state survives tab switches, and the tab
  * bar's glass lens can animate from one tab to the next.
+ *
+ * It's a Server Component, so it can read the verified account and pass it
+ * down to client components (Settings) through AccountProvider.
  */
-export default function TabsLayout({ children }: { children: React.ReactNode }) {
+export default async function TabsLayout({ children }: { children: React.ReactNode }) {
+  const account = await getAccount();
   return (
-    <PlannerProvider>
-      {children}
-      <TabBar />
-    </PlannerProvider>
+    <AccountProvider account={account}>
+      <PlannerProvider>
+        {children}
+        <TabBar />
+      </PlannerProvider>
+    </AccountProvider>
   );
 }

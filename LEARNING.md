@@ -398,3 +398,87 @@ generate each local date in the range and convert `date + time` with `AT TIME
 ZONE 'America/Chicago'`, which applies the right UTC offset for that specific
 date. So a 6 PM class is 23:00 UTC in October and 00:00 UTC the next day in
 November, and a unit test checks exactly that.
+
+---
+
+## Phase 3: Auth and onboarding
+
+### What we built, in plain English
+
+Real accounts. Supabase Auth stores passwords securely (hashed with bcrypt),
+sends confirmation and password-reset emails, and gives each signed-in
+person a short-lived **access token** (a signed JWT) plus a **refresh token**,
+both kept in cookies. Every page, server action and database query can then
+tell who you are. New accounts go through a three-step onboarding (name,
+time zone, planning hours) that fills in the settings the auto-planner needs.
+Without Supabase configured, the app runs in **demo mode** with sample data.
+
+### Key concepts
+
+**1. Server actions.** `"use server"` functions (in `app/actions/`) run only
+on the server, but the browser calls them like ordinary async functions.
+Passwords go from our server straight to Supabase, and validation runs
+again on the server, because anything in the browser can be bypassed.
+
+**2. Cookies, not localStorage.** `@supabase/ssr` keeps the session in
+cookies so the server can read it for server-rendered pages. JavaScript in
+the page can't read httpOnly cookies, which limits what a cross-site
+scripting bug could steal.
+
+**3. Verify, don't trust.** On the server we use `getClaims()`, which checks
+the token's cryptographic signature. `getSession()` would just read the
+cookie, and cookies can be edited. I tested this: a hand-forged session
+cookie claiming to be an onboarded user was redirected to the sign-up page.
+
+**4. Middleware as the gatekeeper.** `middleware.ts` runs before every page.
+It refreshes expiring tokens and asks `routeFor()` where the request
+belongs. Keeping the rules in a pure function means 20 fast unit tests cover
+every combination (signed out, demo, new account, member).
+
+**5. The stale token trap.** "Onboarded" lives in the user's metadata, which
+is copied into the access token. After saving onboarding the OLD token
+still says `onboarded: false`, so the middleware would bounce you straight
+back to onboarding forever. The fix: `refreshSession()` right after
+`updateUser()` to mint a token with the new value.
+
+**6. Not leaking who has an account.** Sign-in says "email or password is
+incorrect" (never which one), password reset always says "if that email has
+an account…", and Supabase's sign-up answers the same way for existing
+emails. Otherwise attackers could use our forms to test which emails are
+registered ("user enumeration").
+
+**7. Open redirects.** Links like `/auth/callback?next=…` could be abused to
+bounce people to a phishing site right after a real login.
+`safeNext()` only allows paths on our own site; tests include
+`https://evil.example`, `//evil.example` and `/\evil.example`.
+
+**8. Testing code that talks to a service.** The server actions are tested
+with a fake Supabase client (`vi.mock`) that records calls and returns
+whatever each test needs: success, "check your email", rate limits. That
+tests OUR logic quickly and deterministically, without a network.
+
+### Interview questions
+
+**Q1. How does authentication work in your app, end to end?**
+The sign-up form calls a Next.js server action, which re-validates the input
+with zod and calls Supabase Auth. Supabase hashes the password, sends a
+confirmation email, and on confirmation the link hits my `/auth/callback`
+route, which exchanges a one-time code for a session stored in httpOnly
+cookies. On every request, middleware refreshes the token if needed, verifies
+it with `getClaims()`, and redirects based on a pure `routeFor()` function.
+Database queries carry the same token, so Postgres row-level security
+enforces the same identity.
+
+**Q2. Why verify the JWT on the server instead of reading the session cookie?**
+A cookie is just data the browser sends; anyone can edit it. The JWT inside
+is signed by Supabase, so verifying the signature (`getClaims()`) proves it
+wasn't forged or modified. I tested it by forging a session cookie that
+claimed to be an onboarded user: the middleware treated it as signed out.
+
+**Q3. What security mistakes did you design against in the auth flow?**
+User enumeration (generic messages for sign-in and password reset), open
+redirects (`safeNext()` only allows same-site paths), trusting client-side
+validation (every action re-validates with the same zod schema), leaking
+secrets (only the public publishable key is in the browser; the database
+password is server-only), and stale state (refreshing the token after
+changing metadata). Each one has a unit test.
