@@ -46,7 +46,10 @@ if ($env:SUPABASE_DB_PASSWORD) {
   # Lets CI (or a test) provide it without a prompt.
   $password = $env:SUPABASE_DB_PASSWORD
 } else {
-  $secure = Read-Host "Supabase database password (typing is hidden)" -AsSecureString
+  Write-Host ""
+  Write-Host "Question 1 of 2: your Supabase DATABASE password." -ForegroundColor Cyan
+  Write-Host "(Nothing appears while you type. That's normal. Press Enter when done.)"
+  $secure = Read-Host "Database password" -AsSecureString
   $bstr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure)
   try {
     $password = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($bstr)
@@ -64,7 +67,10 @@ $dbUser = "postgres.$ProjectRef"
 # normal visible prompt is fine. It's under Project Settings > API Keys.
 $publishableKey = $env:SUPABASE_PUBLISHABLE_KEY
 if (-not $publishableKey) {
-  $publishableKey = (Read-Host "Supabase publishable key (starts with sb_publishable_; Enter to skip)").Trim()
+  Write-Host ""
+  Write-Host "Question 2 of 2: your Supabase PUBLISHABLE key (Project Settings > API Keys)." -ForegroundColor Cyan
+  Write-Host "(Starts with sb_publishable_. Right-click to paste. Press Enter to skip.)"
+  $publishableKey = (Read-Host "Publishable key").Trim()
 }
 
 # --- 2. .env.local ---------------------------------------------------------------

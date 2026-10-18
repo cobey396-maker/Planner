@@ -147,8 +147,9 @@ The app uses Supabase Auth for sign-up and sign-in. Without the two public
 values below it runs in **demo mode** (no accounts, sample data only).
 
 1. **Keys:** in Supabase, open **Project Settings → API Keys** and copy the
-   **publishable key** (`sb_publishable_…`). Then either rerun the setup script
-   with `-SkipMigrate` (it asks for the key), or add to `.env.local`:
+   **publishable key** (`sb_publishable_…`). Then run
+   `powershell -ExecutionPolicy Bypass -File scripts\add-supabase-key.ps1`
+   (asks only for the key, then checks the database connection), or add to `.env.local`:
    ```
    NEXT_PUBLIC_SUPABASE_URL="https://YOUR-PROJECT-REF.supabase.co"
    NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY="sb_publishable_..."
