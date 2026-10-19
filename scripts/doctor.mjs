@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unused-expressions -- "check ? ok() : bad()" reads best in a report script */
 /**
  * PLANNER DOCTOR: checks your setup and prints a report you can share.
  *

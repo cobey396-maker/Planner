@@ -221,6 +221,17 @@ test("five finished blocks: level up to 2, celebrated Fortnite-style", async ({ 
   await expect(page.getByTestId("leaderboard")).toContainText("500");
 });
 
+test("demo mode: tasks stay saved after a refresh, and Settings says where", async ({ page }) => {
+  await openAt(page, "/today");
+  await expect(page.getByTestId("demo-notice")).toContainText("saved on this device only");
+  await addTask(page, "Keep me", "30m");
+  await expect(page.getByRole("button", { name: /Keep me/ })).toBeVisible();
+  await page.reload();
+  await expect(page.getByRole("button", { name: /Keep me/ })).toBeVisible();
+  await page.getByRole("link", { name: "Settings" }).click();
+  await expect(page.getByTestId("saved-to")).toHaveText("This device only");
+});
+
 test("Friends starts empty: no made-up people", async ({ page }) => {
   await openAt(page, "/friends");
   await expect(page.getByRole("heading", { name: "No friends yet" })).toBeVisible();

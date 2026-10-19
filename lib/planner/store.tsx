@@ -19,7 +19,9 @@ import { saveSettingsAction } from "@/app/actions/profile";
 import { fireConfetti } from "@/lib/confetti";
 import { dayRange } from "@/lib/tz";
 import { placeMany, type SkippedDay } from "./placement";
+import { useProfile } from "@/lib/auth/profile";
 import { levelOf, xpForCompletion } from "./levels";
+import { loadLocal, localSaveKey, saveLocal } from "./local-save";
 import type { FriendRequest, HangoutInvite, Interval, LeaderRow, PersonSummary, PlannedBlock, Suggestion } from "./types";
 
 /**
@@ -170,6 +172,29 @@ export function PlannerProvider({ initial, mode, children }: { initial: InitialP
   const [title, setTitle] = useState(initial.title);
   const [leaderboard, setLeaderboard] = useState(initial.leaderboard);
   const [levelUp, setLevelUp] = useState<{ from: number; to: number } | null>(null);
+
+  // Demo mode (no database): save each local account's schedule in this
+  // browser under its own key, and load it back on the next visit.
+  const localProfile = useProfile();
+  const storageKey = mode === "local" ? localSaveKey(localProfile?.email) : null;
+  const [loadedKey, setLoadedKey] = useState<string | null>(null);
+  useEffect(() => {
+    if (!storageKey) return;
+    const saved = loadLocal(storageKey);
+    setBlocks(saved?.blocks ?? initial.blocks);
+    setPoints(saved?.pointsTotal ?? initial.pointsTotal);
+    setFlameStyle(saved?.flameStyle ?? initial.flameStyle);
+    setTitle(saved?.title ?? initial.title);
+    setWeekStart(saved?.weekStartsOn ?? initial.weekStartsOn);
+    setLoadedKey(storageKey);
+    // Load once per account (not every time `initial` is re-created).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [storageKey]);
+  useEffect(() => {
+    // Only save once this account's data has been loaded (never overwrite it with an empty start).
+    if (!storageKey || loadedKey !== storageKey) return;
+    saveLocal(storageKey, { v: 1, blocks, pointsTotal, flameStyle, title, weekStartsOn });
+  }, [storageKey, loadedKey, blocks, pointsTotal, flameStyle, title, weekStartsOn]);
 
   /** Change the XP total, celebrating if that crosses into a new level. */
   const applyXp = useCallback((next: number | ((prev: number) => number)) => {

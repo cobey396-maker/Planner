@@ -1,6 +1,6 @@
 "use client";
 
-import { Bell, CalendarClock, Eye, FileText, Globe, Mail, MapPin, Moon, Palette, Pencil, Shield, Users } from "lucide-react";
+import { Bell, Cloud, HardDrive, CalendarClock, Eye, FileText, Globe, Mail, MapPin, Moon, Palette, Pencil, Shield, Users } from "lucide-react";
 import { motion } from "motion/react";
 import Link from "next/link";
 import { useState, useSyncExternalStore } from "react";
@@ -188,6 +188,24 @@ export function SettingsScreen() {
               />
             </ListGroup>
           )}
+        </motion.div>
+
+        <motion.div variants={fadeUp}>
+          <ListGroup header="Your data">
+            <ListRow
+              icon={
+                <RowIcon color={mode === "remote" ? "var(--task-green)" : "var(--task-orange)"}>
+                  {mode === "remote" ? <Cloud size={17} /> : <HardDrive size={17} />}
+                </RowIcon>
+              }
+              title="Saved to"
+              trailing={
+                <span className="text-secondary-label" data-testid="saved-to">
+                  {mode === "remote" ? "Your account" : "This device only"}
+                </span>
+              }
+            />
+          </ListGroup>
         </motion.div>
 
         <motion.div variants={fadeUp}>

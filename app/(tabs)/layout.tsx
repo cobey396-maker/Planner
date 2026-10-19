@@ -1,3 +1,4 @@
+import { DemoNotice } from "@/components/planner/demo-notice";
 import { LevelUp, MissedNotice } from "@/components/planner/level-up";
 import { TabTour } from "@/components/planner/tab-tour";
 import { TimeZoneCheck } from "@/components/planner/time-zone-check";
@@ -67,6 +68,7 @@ export default async function TabsLayout({ children }: { children: React.ReactNo
           </div>
         )}
         <TimeZoneCheck />
+        <DemoNotice />
         {children}
         <TabBar />
         <LevelUp />
