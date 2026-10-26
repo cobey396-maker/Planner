@@ -15,8 +15,8 @@ app for teens and young adults, with a native iOS "liquid glass" feel.
 
 | Screen | What it does |
 | --- | --- |
-| **Sign up / Log in** (`/`) | Create an account (name, @username with a live "available / taken" check, email, password) or log in with your email or username: validated on client and server (zod), password strength meter, email confirmation, password reset, and "Explore with sample data". Apple/Google buttons are placeholders. |
-| **Onboarding** (`/onboarding`) | Name, optional profile photo (initials if skipped), time zone (auto-detected), optional city and state, then confetti. Planning is 24/7, so there are no hours to pick. |
+| **Sign up / Log in** (`/`) | Create an account (name, @username with a live "available / taken" check, email, password) or log in with your email or username: validated on client and server (zod), password strength meter, email confirmation, password reset, and "Explore with sample data". |
+| **Onboarding** (`/onboarding`) | Name, optional profile photo (initials if skipped), time zone (auto-detected), optional city and state, a prompt to add the app to your home screen (skipped if already installed), then confetti. Planning is 24/7, so there are no hours to pick. |
 | **Today** | Only your own tasks for today. Empty day: "No tasks for today 😊". Otherwise a progress ring, "Happening now", and a timeline with free gaps. **+** adds a task (auto-placed in the first open time, or at a time you pick). Tap a block to complete or delete it. |
 | **Week** | **+** to add tasks (one day, any date up to a year out, several picked days, or repeating: every day, weekdays, weekly or chosen weekdays), week navigation, hours planned per day (computed the same way as the grid, so they always match), and a 24-hour day grid with a "now" line. |
 | **Streaks** | Starts at 0 streak, level 1. XP for finishing blocks (+100, +50 before 9 AM, streak bonus up to +200; −50 for a missed block, but you never lose a level), Fortnite-style levels with a level-up celebration, a reward track of flame colors and titles to equip, a weekly recap, and 31 badges that unlock by rule. |

@@ -837,3 +837,23 @@ content is one of the costliest things you can put on a mobile screen.
 Use thread CPU time instead of wall time, repeat runs and take the median,
 change one variable at a time, and compare against a rebuilt "before"
 version under identical conditions.
+
+## Update: home-screen step in sign-up, no Apple/Google buttons
+
+- **Onboarding** has a new step after the questions: "Put it on your home
+  screen". iPhone gets the three Safari steps (Share → Add to Home Screen →
+  Add); Android/desktop Chrome get an "Add to home screen" button that opens
+  the browser's own install dialog; anything else gets general directions.
+  It's skipped when the app is already running from the home screen, and
+  "Maybe later" always moves on.
+- The install event is caught once at the app root, so `useInstall()`
+  (`components/planner/install-prompt.tsx`) shares it between this step and
+  the Today/Settings card.
+- **Sign-up/log-in** no longer shows "Continue with Apple/Google". They were
+  placeholders with no provider behind them; email is the only way in.
+
+**Interview question**
+
+**Q. Why can't a website show its own install dialog on iPhone?**
+Safari has no `beforeinstallprompt` event, so a page can't trigger installing.
+The best it can do is detect iOS and show the Share → Add to Home Screen steps.

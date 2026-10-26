@@ -70,6 +70,25 @@ export function PwaSetup() {
   return null;
 }
 
+/**
+ * Where this device stands on installing, and a function that opens the
+ * browser's own install dialog (Android/desktop Chrome only). `install()`
+ * resolves to true if the person accepted.
+ */
+export function useInstall(): { platform: InstallPlatform; install: () => Promise<boolean> } {
+  const platform = useSyncExternalStore(subscribe, readPlatform, () => "unsupported" as const);
+  const install = async () => {
+    if (!deferred) return false;
+    await deferred.prompt();
+    const { outcome } = await deferred.userChoice;
+    if (outcome === "accepted") installed = true;
+    deferred = null;
+    notify();
+    return outcome === "accepted";
+  };
+  return { platform, install };
+}
+
 function readDismissed() {
   try {
     return localStorage.getItem(INSTALL_DISMISSED_KEY) === "1";
@@ -85,21 +104,12 @@ function readDismissed() {
  * Not dismissible (Settings): always there until the app is installed.
  */
 export function InstallPrompt({ dismissible = false }: { dismissible?: boolean }) {
-  const platform = useSyncExternalStore(subscribe, readPlatform, () => "unsupported" as const);
+  const { platform, install } = useInstall();
   const dismissedBefore = useSyncExternalStore(subscribe, readDismissed, () => true);
   const [closed, setClosed] = useState(false);
 
   if (platform === "installed" || platform === "unsupported") return null;
   if (dismissible && (dismissedBefore || closed)) return null;
-
-  const install = async () => {
-    if (!deferred) return;
-    await deferred.prompt();
-    const { outcome } = await deferred.userChoice;
-    if (outcome === "accepted") installed = true;
-    deferred = null;
-    notify();
-  };
 
   return (
     <div className="glass-card flex items-start gap-3 rounded-card p-4" data-testid="install-prompt">

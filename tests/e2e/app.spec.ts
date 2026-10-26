@@ -310,7 +310,7 @@ test("Log in: one tap away, and it takes an email or a username", async ({ page 
   await expect(page.getByRole("heading", { name: "Create your account" })).toBeVisible();
 });
 
-test("onboarding asks name, photo (skippable) and place, with no planning hours", async ({ page }) => {
+test("onboarding asks name, photo (skippable), place and home screen, with no planning hours", async ({ page }) => {
   const errors = await openAt(page, "/onboarding");
   await expect(page.getByRole("heading", { name: "What should we call you?" })).toBeVisible();
   const next = page.getByRole("button", { name: "Continue" });
@@ -336,6 +336,13 @@ test("onboarding asks name, photo (skippable) and place, with no planning hours"
   await expect(page.getByText(/When can we plan/)).toHaveCount(0);
 
   await page.getByRole("button", { name: "Finish" }).click();
+
+  // Then: add the app to your home screen (skippable). Desktop Chrome in the
+  // test gets the general directions, and Back is gone (answers are saved).
+  await expect(page.getByRole("heading", { name: "Put it on your home screen" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Back" })).toBeHidden();
+  await page.getByRole("button", { name: "Maybe later" }).click();
+
   await expect(page.getByRole("heading", { name: "You're all set, Cobey!" })).toBeVisible();
   await expect(page.locator("#confetti-canvas")).toHaveCount(1);
   await page.getByRole("button", { name: "Let's go" }).click();

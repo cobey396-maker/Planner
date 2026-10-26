@@ -1,11 +1,12 @@
 "use client";
 
-import { ArrowLeft, ArrowRight, Globe, Loader2, Sparkles } from "lucide-react";
+import { ArrowLeft, ArrowRight, Check, Download, Globe, Loader2, PlusSquare, Share, Sparkles } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState, useSyncExternalStore, type ReactNode } from "react";
 import { saveOnboardingAction } from "@/app/actions/onboarding";
 import { uploadAvatarAction } from "@/app/actions/profile";
+import { useInstall } from "@/components/planner/install-prompt";
 import { PlaceFields } from "@/components/planner/place-fields";
 import { AvatarPicker } from "@/components/ui/avatar-picker";
 import { Button } from "@/components/ui/button";
@@ -13,8 +14,8 @@ import { fireConfetti } from "@/lib/confetti";
 import { fluid } from "@/lib/design/motion";
 import { useNow } from "@/lib/use-now";
 
-const STEPS = ["name", "photo", "where", "done"] as const;
-const QUESTIONS = 3;
+const STEPS = ["name", "photo", "where", "home", "done"] as const;
+const QUESTIONS = 4;
 
 /** The browser's time zone, read only on the client (the server can't know it). */
 function useDetectedTimeZone(): string | null {
@@ -32,15 +33,18 @@ function useDetectedTimeZone(): string | null {
  * 2. A profile photo, optional. Skip it and you get your initials instead.
  * 3. Where you are: the time zone (so "6 PM" means 6 PM where you are) and,
  *    optionally, your city and state for "people near you" suggestions.
+ * 4. Add the app to your home screen (skipped if it's already installed).
+ *    Your answers are saved before this step, so "Maybe later" loses nothing.
  *
  * There are no planning hours: the planner can use all 24 hours of the day.
  * Steps slide left/right on the fluid spring; Back keeps your answers.
- * Nothing is saved until you finish.
+ * Nothing is saved until you finish step 3.
  */
 export function OnboardingScreen({ defaultName, remote }: { defaultName: string; remote: boolean }) {
   const router = useRouter();
   const now = useNow();
   const detected = useDetectedTimeZone();
+  const { platform } = useInstall();
   const [step, setStep] = useState(0);
   const [direction, setDirection] = useState(1);
   const [name, setName] = useState(defaultName === "You" ? "" : defaultName);
@@ -94,7 +98,8 @@ export function OnboardingScreen({ defaultName, remote }: { defaultName: string;
       setError(result.error);
       return;
     }
-    go(1);
+    // Already running as an installed app: no need to ask.
+    go(platform === "installed" ? 2 : 1);
   }
 
   const canContinue = STEPS[step] !== "name" || name.trim().length > 0;
@@ -109,7 +114,7 @@ export function OnboardingScreen({ defaultName, remote }: { defaultName: string;
           type="button"
           onClick={() => go(-1)}
           aria-label="Back"
-          disabled={step === 0 || STEPS[step] === "done"}
+          disabled={step === 0 || STEPS[step] === "home" || STEPS[step] === "done"}
           className="-ml-2 grid size-11 place-items-center rounded-full text-tint disabled:invisible"
         >
           <ArrowLeft size={22} />
@@ -214,6 +219,8 @@ export function OnboardingScreen({ defaultName, remote }: { defaultName: string;
               </Step>
             )}
 
+            {STEPS[step] === "home" && <HomeScreenStep onDone={() => go(1)} />}
+
             {STEPS[step] === "done" && (
               <Step emoji="🎉" title={`You're all set, ${firstName}!`} subtitle="Add what you need to do and we'll find the time for it.">
                 <Button size="lg" className="rounded-full" onClick={() => router.push("/today")}>
@@ -239,7 +246,7 @@ export function OnboardingScreen({ defaultName, remote }: { defaultName: string;
           )}
         </AnimatePresence>
 
-        {STEPS[step] !== "done" && (
+        {STEPS[step] !== "done" && STEPS[step] !== "home" && (
           <Button
             size="lg"
             className="mt-8 rounded-full"
@@ -271,5 +278,90 @@ function Step({ emoji, title, subtitle, children }: { emoji: string; title: stri
       <p className="mb-7 mt-2 text-body text-secondary-label">{subtitle}</p>
       {children}
     </div>
+  );
+}
+
+/**
+ * "Add it to your home screen." iPhones can only install from Safari's Share
+ * menu, so they get the steps; Android/desktop Chrome get an Install button
+ * that opens the browser's own dialog; anything else gets general directions.
+ */
+function HomeScreenStep({ onDone }: { onDone: () => void }) {
+  const { platform, install } = useInstall();
+  const [added, setAdded] = useState(false);
+
+  return (
+    <Step
+      emoji="📲"
+      title="Put it on your home screen"
+      subtitle="Open your schedule in one tap, full-screen, just like a real app."
+    >
+      {platform === "ios" && (
+        <ol className="glass-card flex flex-col gap-4 rounded-2xl p-4 text-body">
+          <InstallStep n={1}>
+            Tap <Share aria-label="Share" size={18} className="inline -translate-y-0.5 text-tint" />{" "}
+            <strong>Share</strong> at the bottom of Safari
+          </InstallStep>
+          <InstallStep n={2}>
+            Scroll down and tap <PlusSquare aria-hidden size={18} className="inline -translate-y-0.5" />{" "}
+            <strong>Add to Home Screen</strong>
+          </InstallStep>
+          <InstallStep n={3}>
+            Tap <strong>Add</strong>
+          </InstallStep>
+        </ol>
+      )}
+
+      {platform === "prompt" && !added && (
+        <Button
+          size="lg"
+          className="rounded-full"
+          onClick={async () => {
+            if (await install()) setAdded(true);
+          }}
+        >
+          <Download aria-hidden size={18} /> Add to home screen
+        </Button>
+      )}
+
+      {(added || platform === "installed") && (
+        <p className="glass-card flex items-center gap-3 rounded-2xl p-4 text-body" role="status">
+          <Check aria-hidden size={20} className="shrink-0 text-success" /> Added! Look for the icon on your home screen.
+        </p>
+      )}
+
+      {platform === "unsupported" && (
+        <p className="glass-card rounded-2xl p-4 text-body text-secondary-label">
+          Open this site on your phone, then use your browser&apos;s menu and choose{" "}
+          <strong className="text-label">Add to Home screen</strong> or <strong className="text-label">Install app</strong>.
+        </p>
+      )}
+
+      <Button
+        size="lg"
+        variant={added || platform === "installed" || platform === "ios" ? "filled" : "plain"}
+        className="mt-4 rounded-full"
+        onClick={onDone}
+      >
+        {added || platform === "installed" ? "Continue" : platform === "ios" ? "Done" : "Maybe later"}
+        <ArrowRight aria-hidden size={18} />
+      </Button>
+      {platform === "ios" && (
+        <Button variant="plain" size="sm" className="mx-auto mt-1 flex" onClick={onDone}>
+          Maybe later
+        </Button>
+      )}
+    </Step>
+  );
+}
+
+function InstallStep({ n, children }: { n: number; children: ReactNode }) {
+  return (
+    <li className="flex items-center gap-3">
+      <span className="grid size-7 shrink-0 place-items-center rounded-full bg-tint text-footnote font-semibold text-on-tint">
+        {n}
+      </span>
+      <span>{children}</span>
+    </li>
   );
 }
