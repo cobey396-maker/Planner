@@ -8,7 +8,6 @@ import { LargeTitlePage } from "@/components/ui/large-title-page";
 import { ProgressRing } from "@/components/ui/progress-ring";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/cn";
-import { useEntrance } from "@/lib/design/entrance";
 import { fadeUp, fluid, stagger } from "@/lib/design/motion";
 import {
   BADGES,
@@ -34,7 +33,6 @@ const CATEGORIES: BadgeCategory[] = ["Getting started", "Streaks", "Big days", "
  * starts at 0 streak, level 1 with 0 XP, and every badge locked.
  */
 export function StreaksScreen() {
-  const entrance = useEntrance();
   const now = useNow();
   const { blocks, pointsTotal, timeZone, weekStartsOn, hasAcceptedHangout, friends, flameStyle, title } = usePlanner();
 
@@ -63,7 +61,7 @@ export function StreaksScreen() {
 
   return (
     <LargeTitlePage title="Streaks" subtitle="Small wins, every day.">
-      <motion.div variants={stagger} initial={entrance} animate="animate" className="flex flex-col gap-6">
+      <motion.div variants={stagger} initial={false} animate="animate" className="flex flex-col gap-6">
         <motion.div variants={fadeUp} className="grid grid-cols-2 gap-3">
           <Card className="flex flex-col items-center py-6 text-center">
             <Flame style={streak > 0 ? (flameStyle as FlameStyle) : null} />
@@ -249,7 +247,10 @@ export function Flame({ style, size = "text-5xl" }: { style: FlameStyle | null; 
               ...(rainbow ? { filter: ["hue-rotate(0deg) saturate(1.6)", "hue-rotate(360deg) saturate(1.6)"] } : {}),
             }
       }
-      transition={style === null ? fluid : { duration: 2.4, repeat: Infinity, ease: "easeInOut" }}
+      // Flicker a couple of times when the tab opens, then rest. An endless
+      // loop kept the screen redrawing every frame (and, for the rainbow
+      // flame, re-filtering it), which made taps lag on phones.
+      transition={style === null ? fluid : { duration: 2.4, repeat: 2, ease: "easeInOut" }}
     >
       🔥
     </motion.span>

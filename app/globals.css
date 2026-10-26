@@ -52,7 +52,7 @@
   --glass-edge: rgb(255 255 255 / 0.75);
   --glass-highlight: rgb(255 255 255 / 0.9);
   --lens: rgb(255 255 255 / 0.85);
-  /* The slowly drifting color blobs behind everything. */
+  /* The soft color glows behind everything (components/ui/liquid-background.tsx). */
   --orb-opacity: 0.42;
 
   /* Task colors. Users pick one per task/event; blocks are tinted with it.
@@ -262,12 +262,28 @@ body {
   backdrop-filter: saturate(180%) blur(20px);
 }
 
-/* A liquid-glass card: see-through, blurred, with a lit top rim. Content
- * behind it (the drifting orbs) bleeds through softly. */
+/* A liquid-glass card: see-through with a lit top rim; the color glows
+ * behind it show through softly.
+ *
+ * No backdrop-filter on purpose. Cards sit on the still, already-soft
+ * gradient background, where a blur makes no visible difference, but it made
+ * every card re-blur its backdrop whenever anything moved: the single biggest
+ * graphics cost of switching tabs on phones. Things that float over
+ * SCROLLING content (tab bar, nav bar, glass buttons) keep their blur. */
 @utility glass-card {
   background: var(--glass-card);
-  -webkit-backdrop-filter: saturate(180%) blur(28px);
-  backdrop-filter: saturate(180%) blur(28px);
+  border: 1px solid var(--glass-edge);
+  box-shadow:
+    inset 0 1px 0 var(--glass-highlight),
+    var(--elev-card);
+}
+
+/* glass-card for small things floating over scrolling content (the round
+ * glass buttons in the nav bar): here the blur is visible, so keep it. */
+@utility glass-float {
+  background: var(--glass-card);
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
+  backdrop-filter: saturate(180%) blur(20px);
   border: 1px solid var(--glass-edge);
   box-shadow:
     inset 0 1px 0 var(--glass-highlight),
@@ -283,42 +299,6 @@ body {
   box-shadow:
     inset 0 1px 0 var(--glass-highlight),
     var(--elev-float);
-}
-
-/* Liquid background orbs. Each drifts on its own long loop (transform only,
- * so it is cheap for the GPU), which makes the glass above feel alive. */
-@keyframes drift-a {
-  0%,
-  100% {
-    transform: translate3d(0, 0, 0) scale(1);
-  }
-  33% {
-    transform: translate3d(12vw, 8vh, 0) scale(1.15);
-  }
-  66% {
-    transform: translate3d(-8vw, 14vh, 0) scale(0.92);
-  }
-}
-@keyframes drift-b {
-  0%,
-  100% {
-    transform: translate3d(0, 0, 0) scale(1.05);
-  }
-  50% {
-    transform: translate3d(-14vw, -10vh, 0) scale(0.9);
-  }
-}
-@keyframes drift-c {
-  0%,
-  100% {
-    transform: translate3d(0, 0, 0) scale(0.95);
-  }
-  40% {
-    transform: translate3d(10vw, -12vh, 0) scale(1.12);
-  }
-  75% {
-    transform: translate3d(-6vw, 6vh, 0) scale(1);
-  }
 }
 
 /* Loading skeleton shimmer. */

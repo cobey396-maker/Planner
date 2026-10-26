@@ -22,7 +22,6 @@ import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/components/ui/toast";
 import { useAccount } from "@/lib/auth/account-context";
 import { clearProfile, useProfile } from "@/lib/auth/profile";
-import { useEntrance } from "@/lib/design/entrance";
 import { fadeUp, stagger } from "@/lib/design/motion";
 import { usePlanner, type Prefs } from "@/lib/planner/store";
 import type { ThemePreference } from "@/lib/theme";
@@ -46,7 +45,6 @@ function useTimeZoneList(): string[] | null {
  * Notifications go to your email until there's an installed app.
  */
 export function SettingsScreen() {
-  const entrance = useEntrance();
   const toast = useToast();
   const { preference, setPreference } = useTheme();
   const account = useAccount();
@@ -67,7 +65,7 @@ export function SettingsScreen() {
 
   return (
     <LargeTitlePage title="Settings">
-      <motion.div variants={stagger} initial={entrance} animate="animate" className="flex flex-col gap-7">
+      <motion.div variants={stagger} initial={false} animate="animate" className="flex flex-col gap-7">
         <motion.div variants={fadeUp}>
           <Card className="flex items-center gap-4">
             <Avatar name={name} color={profile?.avatarColor ?? "blue"} src={profile?.avatarUrl} size={60} />

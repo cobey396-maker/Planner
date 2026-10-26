@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { addDays, dayKey, dayRange, isoWeekday, minuteOfDay, startOfWeek, zonedTimeToUtc } from "@/lib/tz";
+import { addDays, dayKey, dayRange, isoWeekday, minuteOfDay, startOfWeek, zonedParts, zonedTimeToUtc } from "@/lib/tz";
 
 const CHI = "America/Chicago";
 const iso = (ms: number) => new Date(ms).toISOString();
@@ -45,5 +45,52 @@ describe("time zone helpers", () => {
     expect(startOfWeek("2026-10-14", 7)).toBe("2026-10-11"); // Sunday
     expect(startOfWeek("2026-10-18", 1)).toBe("2026-10-12"); // a Sunday, Monday-start week
     expect(startOfWeek("2026-10-18", 7)).toBe("2026-10-18");
+  });
+});
+
+describe("zonedParts (fast path)", () => {
+  // The browser's own answer, computed the slow way, as ground truth.
+  function slowParts(instant: number, timeZone: string) {
+    const p = Object.fromEntries(
+      new Intl.DateTimeFormat("en-US", {
+        timeZone,
+        hourCycle: "h23",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+      })
+        .formatToParts(instant)
+        .map((x) => [x.type, Number(x.value)]),
+    );
+    return { year: p.year, month: p.month, day: p.day, hour: p.hour, minute: p.minute, second: p.second };
+  }
+
+  const ZONES = ["America/Chicago", "America/New_York", "America/Los_Angeles", "Europe/London", "Asia/Kolkata", "Australia/Adelaide", "Pacific/Chatham", "America/St_Johns", "UTC"];
+
+  it("matches the browser exactly, minute by minute across DST switches", { timeout: 60_000 }, () => {
+    // Every 7 minutes (plus odd seconds) for two days around each 2026/27 switch.
+    const windows = ["2026-03-08T00:00:00Z", "2026-11-01T00:00:00Z", "2026-03-29T00:00:00Z", "2026-10-25T00:00:00Z", "2026-04-05T00:00:00Z", "2026-09-27T00:00:00Z", "2027-03-14T00:00:00Z"];
+    for (const zone of ZONES) {
+      for (const w of windows) {
+        const start = Date.parse(w) - 86_400_000;
+        for (let t = start; t < start + 3 * 86_400_000; t += 7 * 60_000 + 13_000) {
+          expect(zonedParts(t, zone), `${zone} ${new Date(t).toISOString()}`).toEqual(slowParts(t, zone));
+        }
+      }
+    }
+  });
+
+  it("matches the browser at random instants over 3 years", { timeout: 60_000 }, () => {
+    let seed = 42;
+    const rand = () => ((seed = (seed * 1103515245 + 12345) % 2 ** 31) / 2 ** 31);
+    const from = Date.parse("2025-01-01T00:00:00Z");
+    for (let i = 0; i < 3000; i++) {
+      const t = from + Math.floor(rand() * 3 * 365 * 86_400_000);
+      const zone = ZONES[i % ZONES.length];
+      expect(zonedParts(t, zone)).toEqual(slowParts(t, zone));
+    }
   });
 });

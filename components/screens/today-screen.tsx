@@ -12,7 +12,6 @@ import { LargeTitlePage } from "@/components/ui/large-title-page";
 import { ProgressRing } from "@/components/ui/progress-ring";
 import { BlockListSkeleton, Skeleton } from "@/components/ui/skeleton";
 import { TaskBlock } from "@/components/ui/task-block";
-import { useEntrance } from "@/lib/design/entrance";
 import { fadeUp, fluid, stagger } from "@/lib/design/motion";
 import { usePlanner } from "@/lib/planner/store";
 import type { PlannedBlock } from "@/lib/planner/types";
@@ -26,7 +25,6 @@ import { useNow } from "@/lib/use-now";
  * between blocks.
  */
 export function TodayScreen() {
-  const entrance = useEntrance();
   const now = useNow();
   const { blocks, timeZone } = usePlanner();
   const [adding, setAdding] = useState(false);
@@ -61,7 +59,7 @@ export function TodayScreen() {
       subtitle={formatDayKey(today, { weekday: "long", month: "long", day: "numeric" })}
       trailing={addButton}
     >
-      <motion.div variants={stagger} initial={entrance} animate="animate" className="flex flex-col gap-6">
+      <motion.div variants={stagger} initial={false} animate="animate" className="flex flex-col gap-6">
         <InstallPrompt dismissible />
         {todays.length === 0 ? (
           <motion.div variants={fadeUp}>

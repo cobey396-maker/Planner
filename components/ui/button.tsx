@@ -23,7 +23,7 @@ const variants = {
   tinted: "bg-tint/12 text-tint",
   plain: "bg-transparent text-tint",
   danger: "bg-danger/12 text-danger",
-  glass: "glass-card text-label",
+  glass: "glass-float text-label",
 } as const;
 
 const sizes = {

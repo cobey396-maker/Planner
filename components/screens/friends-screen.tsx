@@ -13,7 +13,6 @@ import { Sheet } from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/components/ui/toast";
 import { cn } from "@/lib/cn";
-import { useEntrance } from "@/lib/design/entrance";
 import { fadeUp, fluid, stagger } from "@/lib/design/motion";
 import { sharedFreeWindows } from "@/lib/planner/free-time";
 import { usePlanner } from "@/lib/planner/store";
@@ -37,7 +36,6 @@ const place = (p: { city: string | null; region: string | null }) => [p.city, p.
  * see when you're busy, never what you're doing.
  */
 export function FriendsScreen() {
-  const entrance = useEntrance();
   const now = useNow();
   const toast = useToast();
   const { mode, friends, requests, suggestions, hangouts, profile, respondRequest, requestFriend, respondHangout } = usePlanner();
@@ -62,7 +60,7 @@ export function FriendsScreen() {
         </Button>
       }
     >
-      <motion.div variants={stagger} initial={entrance} animate="animate" className="flex flex-col gap-6">
+      <motion.div variants={stagger} initial={false} animate="animate" className="flex flex-col gap-6">
         <AnimatePresence>
           {hangouts.map((h) => (
             <motion.div key={h.id} layout variants={fadeUp} initial="initial" animate="animate" exit="exit">

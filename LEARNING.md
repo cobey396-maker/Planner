@@ -784,3 +784,56 @@ An in-memory cache of route payloads in the browser. Prefetched and visited
 routes are reused for `staleTimes` seconds, so navigating back and forth
 doesn't hit the server. Server Actions that change cookies or revalidate
 clear it.
+
+---
+
+## Fix: taps took seconds on phones
+
+**Symptom.** On a phone, a tab tap took about 2 seconds to register.
+
+**How we found it.** Wall-clock timings were useless on a busy laptop, so we
+measured *CPU thread time* from Chrome traces (phone-sized screen, a year of
+blocks, other programs can't distort it), and switched suspects off one at a
+time. Four causes, biggest first:
+
+1. **An endlessly moving background.** Three drifting blurred blobs meant the
+   browser redrew the whole screen every frame, forever, and every glass card
+   re-blurred what was behind it. At rest the page used ~1-1.5 s of CPU per 3 s
+   of doing nothing. Now the glows are still (and unblurred: they're already
+   soft gradients). At rest: ~0.
+2. **Blur on every card.** `backdrop-filter` on cards that sit over a still,
+   soft gradient changes nothing visible but costs GPU work whenever anything
+   moves. Cards are now plain translucent; only things over *scrolling*
+   content (tab bar, nav bar, glass buttons: `glass-float`) keep the blur.
+3. **New `Intl.DateTimeFormat` on every format call** (`lib/time.ts`). Building
+   a formatter loads locale data. The closed add-task sheet formatted every
+   time option on each visit to Today/Week. Formatters are now cached.
+4. **`Intl` for every timestamp's time zone math** (`lib/tz.ts`). Streaks
+   computed a year of day keys this way on every render. Offsets now come from
+   a per-day cache (per 15 minutes on DST-switch days); a test checks the
+   result against `Intl` minute by minute across switches in 9 zones.
+
+Also: cards no longer animate in one by one on every tab switch (the page
+does one quick fade), and the streak flame flickers twice instead of forever.
+
+**Result** (same machine, same data, CPU ms): one round of switching four tabs
+5,259-5,908 → 1,536-1,605; Streaks switch ~1,700-2,200 → ~500; at rest per 3 s
+946-1,529 → 0-96.
+
+**Interview questions**
+
+**Q1. Why can an idle page drain a phone's battery?**
+Anything that animates forever (CSS loops, JS `repeat: Infinity`, a ticking
+clock that re-renders) forces new frames 60-120 times a second. Expensive
+effects underneath (blur, filters, big layers) multiply the cost. Idle should
+mean zero frames.
+
+**Q2. Why is `backdrop-filter` expensive?**
+The browser must render everything behind the element, blur it, and composite
+it, again whenever what's behind changes. Many blurred surfaces over moving
+content is one of the costliest things you can put on a mobile screen.
+
+**Q3. How do you measure performance on a noisy machine?**
+Use thread CPU time instead of wall time, repeat runs and take the median,
+change one variable at a time, and compare against a rebuilt "before"
+version under identical conditions.

@@ -11,7 +11,6 @@ import { LargeTitlePage } from "@/components/ui/large-title-page";
 import { Skeleton } from "@/components/ui/skeleton";
 import { TaskBlock } from "@/components/ui/task-block";
 import { cn } from "@/lib/cn";
-import { useEntrance } from "@/lib/design/entrance";
 import { fadeUp, fluid, stagger } from "@/lib/design/motion";
 import { usePlanner } from "@/lib/planner/store";
 import type { PlannedBlock } from "@/lib/planner/types";
@@ -39,7 +38,6 @@ export function hoursByDay(blocks: PlannedBlock[], weekDays: string[], timeZone:
  * to see it as a 24-hour grid, and add tasks with +.
  */
 export function WeekScreen() {
-  const entrance = useEntrance();
   const now = useNow();
   const { blocks, timeZone, weekStartsOn } = usePlanner();
   const [weekOffset, setWeekOffset] = useState(0);
@@ -72,7 +70,7 @@ export function WeekScreen() {
 
   return (
     <LargeTitlePage title="Week" subtitle={range} trailing={addButton}>
-      <motion.div variants={stagger} initial={entrance} animate="animate" className="flex flex-col gap-5">
+      <motion.div variants={stagger} initial={false} animate="animate" className="flex flex-col gap-5">
         <motion.div variants={fadeUp} className="flex items-center justify-between">
           <Button variant="glass" size="icon" aria-label="Previous week" onClick={() => setWeekOffset((w) => w - 1)}>
             <ChevronLeft size={20} className="text-tint" />

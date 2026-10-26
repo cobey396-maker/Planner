@@ -45,7 +45,7 @@ export function DesignColors() {
         </div>
       </Section>
 
-      <Section title="Liquid glass" note="Translucent, blurred, with a lit top rim. The drifting color behind it shows through.">
+      <Section title="Liquid glass" note="Translucent, blurred, with a lit top rim. The color glow behind it shows through.">
         <div className="grid grid-cols-2 gap-3">
           <Card className="grid h-28 place-items-center text-subhead font-medium">Glass card</Card>
           <div className="glass-pill grid h-28 place-items-center rounded-full text-subhead font-medium">

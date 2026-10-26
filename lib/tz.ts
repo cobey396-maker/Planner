@@ -29,28 +29,69 @@ function partsFormatter(timeZone: string) {
   return f;
 }
 
-/** The wall-clock fields of an instant in a time zone. */
-export function zonedParts(instant: number, timeZone: string) {
-  const parts = Object.fromEntries(
+/**
+ * Asking Intl for the parts of a date is slow (it was most of the time spent
+ * opening the Streaks tab with a year of blocks). But a zone's offset from
+ * UTC only changes at daylight-saving switches: a couple of times a year, and
+ * always on a 15-minute boundary. So we cache the offset:
+ *   - per UTC day, when the offset is the same at both ends of the day
+ *     (every day but the switch days): 2 Intl calls cover the whole day;
+ *   - per 15-minute window on the rare day that contains a switch.
+ * Everything else is plain UTC date math.
+ * tests/unit/tz.test.ts checks this against Intl across zones and switches.
+ */
+const DAY = 86_400_000;
+const BUCKET = 15 * 60_000;
+/** Offset for a whole UTC day, or null if that day contains a switch. */
+const dayOffsets = new Map<string, number | null>();
+const offsets = new Map<string, number>();
+
+function slowOffsetMinutes(instant: number, timeZone: string): number {
+  const p = Object.fromEntries(
     partsFormatter(timeZone)
       .formatToParts(instant)
-      .map((p) => [p.type, p.value]),
+      .map((x) => [x.type, Number(x.value)]),
   );
-  return {
-    year: Number(parts.year),
-    month: Number(parts.month),
-    day: Number(parts.day),
-    hour: Number(parts.hour),
-    minute: Number(parts.minute),
-    second: Number(parts.second),
-  };
+  const asIfUtc = Date.UTC(p.year, p.month - 1, p.day, p.hour, p.minute, p.second);
+  return Math.round((asIfUtc - Math.floor(instant / 1000) * 1000) / 60000);
 }
 
 /** How far the zone is ahead of UTC at that instant, in minutes (Chicago in summer: -300). */
 export function offsetMinutes(instant: number, timeZone: string): number {
-  const p = zonedParts(instant, timeZone);
-  const asIfUtc = Date.UTC(p.year, p.month - 1, p.day, p.hour, p.minute, p.second);
-  return Math.round((asIfUtc - Math.floor(instant / 1000) * 1000) / 60000);
+  const day = Math.floor(instant / DAY);
+  const dayKeyStr = `${timeZone}|${day}`;
+  let whole = dayOffsets.get(dayKeyStr);
+  if (whole === undefined) {
+    if (dayOffsets.size > 20_000) dayOffsets.clear();
+    const a = slowOffsetMinutes(day * DAY, timeZone);
+    const b = slowOffsetMinutes((day + 1) * DAY - BUCKET, timeZone);
+    whole = a === b ? a : null;
+    dayOffsets.set(dayKeyStr, whole);
+  }
+  if (whole !== null) return whole;
+
+  const bucket = Math.floor(instant / BUCKET);
+  const key = `${timeZone}|${bucket}`;
+  let off = offsets.get(key);
+  if (off === undefined) {
+    if (offsets.size > 20_000) offsets.clear(); // ~200 days of windows per zone; plenty.
+    off = slowOffsetMinutes(bucket * BUCKET, timeZone);
+    offsets.set(key, off);
+  }
+  return off;
+}
+
+/** The wall-clock fields of an instant in a time zone. */
+export function zonedParts(instant: number, timeZone: string) {
+  const d = new Date(instant + offsetMinutes(instant, timeZone) * 60_000);
+  return {
+    year: d.getUTCFullYear(),
+    month: d.getUTCMonth() + 1,
+    day: d.getUTCDate(),
+    hour: d.getUTCHours(),
+    minute: d.getUTCMinutes(),
+    second: d.getUTCSeconds(),
+  };
 }
 
 const pad = (n: number) => String(n).padStart(2, "0");
