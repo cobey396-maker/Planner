@@ -681,3 +681,64 @@ total is just a sum.
 Put the source of truth in one place (the database), mirror only what the UI
 needs, and write a test that runs both implementations over many inputs and
 compares the results.
+
+---
+
+## Update: an installable app (PWA)
+
+### What we built, in plain English
+
+The site can now be installed like a real app. On Android (and desktop
+Chrome) an **Install app** button appears; on iPhone we show the two taps
+Safari needs (Share, then Add to Home Screen). Once installed it opens
+full-screen from its own icon, starts on Today, and shows a friendly
+"You're offline" screen instead of the browser's dinosaur when there's no
+signal.
+
+| Piece | File | What it does |
+| --- | --- | --- |
+| Manifest | `app/manifest.ts` | Name, icons, colors, `display: standalone`, start on `/today`. Served at `/manifest.webmanifest`. |
+| Icons | `scripts/make-icons.mjs` → `public/icons/*`, `app/apple-icon.png` | PNGs generated from `app/icon.svg`, including a "maskable" one with a safe zone. |
+| Service worker | `public/sw.js` | Network-first pages with an offline fallback; cache-first build files; never caches API calls or private data. |
+| Offline page | `app/offline/page.tsx` | Static, precached at install. |
+| Install prompt | `components/planner/install-prompt.tsx`, `lib/pwa.ts` | Captures `beforeinstallprompt`, iOS instructions, hides when installed. On Today (dismissible) and Settings. |
+
+### Key concepts
+
+**1. What makes a site installable.** A manifest with a name, a start URL,
+`display: standalone` and 192 and 512 px icons, served over HTTPS (localhost
+counts), plus a service worker. iOS reads `apple-touch-icon` and the
+`apple-mobile-web-app-*` tags instead of most of the manifest.
+
+**2. Service worker caching strategies.** *Network-first* (pages: fresh when
+online, fallback offline), *cache-first* (files whose names contain a content
+hash, so a cached copy can never be stale), and *don't touch* (anything
+personal or dynamic). Picking per request type is the whole design.
+
+**3. Updating a service worker safely.** The browser re-checks `sw.js` on
+each visit, so it must never be HTTP-cached (`next.config.ts` sends
+`no-cache`). Bumping `VERSION` makes the new worker delete old caches in
+`activate`. In development we unregister workers so they can't serve stale
+dev files.
+
+**4. Platform detection without lying to yourself.** iPadOS reports a Mac
+user agent; touch points give it away. Logic like this lives in a pure
+function (`installPlatform`) so it's unit-tested instead of guessed.
+
+**Interview questions**
+
+**Q1. What's the difference between a PWA and a native app?**
+A PWA is a website with a manifest and a service worker: one codebase, no
+app store review or 15-30% fee, instant updates. Native apps get deeper OS
+access (widgets, background tasks, some notifications on older iOS) and
+store discovery.
+
+**Q2. Why not cache everything for offline use?**
+Stale or private data is worse than no data: a cached schedule could show
+deleted tasks, and a shared device could leak someone's account. Cache only
+what's safe and correct to serve old.
+
+**Q3. How would you ship a fix if a bad service worker went out?**
+Deploy a new `sw.js` (it's fetched uncached, so browsers see it on the next
+visit), call `skipWaiting()`/`clients.claim()` so it takes over at once, and
+delete old caches on activate. Worst case, a worker that unregisters itself.

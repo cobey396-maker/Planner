@@ -6,6 +6,7 @@ import Link from "next/link";
 import { useState, useSyncExternalStore } from "react";
 import { signOutAction } from "@/app/actions/auth";
 import { removeAvatarAction, saveSettingsAction, updateProfileAction, uploadAvatarAction } from "@/app/actions/profile";
+import { InstallPrompt } from "@/components/planner/install-prompt";
 import { PlaceFields } from "@/components/planner/place-fields";
 import { UsernameHint, useUsernameStatus } from "@/components/planner/username-check";
 import { useTheme } from "@/components/providers";
@@ -100,6 +101,10 @@ export function SettingsScreen() {
               </Button>
             )}
           </Card>
+        </motion.div>
+
+        <motion.div variants={fadeUp}>
+          <InstallPrompt />
         </motion.div>
 
         <motion.div variants={fadeUp}>

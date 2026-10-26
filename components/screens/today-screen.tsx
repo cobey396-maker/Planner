@@ -5,6 +5,7 @@ import { AnimatePresence, motion } from "motion/react";
 import { useState } from "react";
 import { AddTaskSheet } from "@/components/planner/add-task-sheet";
 import { BlockDetailSheet, useBlockDetail } from "@/components/planner/block-detail-sheet";
+import { InstallPrompt } from "@/components/planner/install-prompt";
 import { Button } from "@/components/ui/button";
 import { Card, SectionHeader } from "@/components/ui/card";
 import { LargeTitlePage } from "@/components/ui/large-title-page";
@@ -61,6 +62,7 @@ export function TodayScreen() {
       trailing={addButton}
     >
       <motion.div variants={stagger} initial={entrance} animate="animate" className="flex flex-col gap-6">
+        <InstallPrompt dismissible />
         {todays.length === 0 ? (
           <motion.div variants={fadeUp}>
             <Card className="flex flex-col items-center px-6 py-12 text-center">

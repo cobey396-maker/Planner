@@ -32,3 +32,4 @@ playwright-report/
 
 # prisma: the client is generated from prisma/schema.prisma (npm install runs it)
 lib/generated/
+.vercel

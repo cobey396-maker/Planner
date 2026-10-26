@@ -3,7 +3,7 @@
 Tell it what you need to do, and it plans your week. A mobile-first schedule
 app for teens and young adults, with a native iOS "liquid glass" feel.
 
-> Status: **Phases 1–3 complete** (design system; database with row-level
+> Status: **Phases 1–3 complete** and installable as a home-screen app (PWA) (design system; database with row-level
 > security; real accounts and onboarding), plus every screen designed with
 > sample data. Saving your schedule and the auto-planner come next.
 > What each phase taught is in [LEARNING.md](LEARNING.md).

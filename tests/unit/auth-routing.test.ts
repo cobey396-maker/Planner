@@ -31,6 +31,14 @@ describe("routeFor", () => {
     }
   });
 
+  it("the installable-app files are never redirected, signed in or out", () => {
+    for (const path of ["/offline", "/manifest.webmanifest", "/sw.js"]) {
+      expect(routeFor(path, signedOut)).toBeNull();
+      expect(routeFor(path, newUser)).toBeNull();
+      expect(routeFor(path, member)).toBeNull();
+    }
+  });
+
   it("'Explore with sample data' unlocks the app without an account", () => {
     expect(routeFor("/today", demo)).toBeNull();
     expect(routeFor("/onboarding", demo)).toBe("/");

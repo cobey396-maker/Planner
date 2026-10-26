@@ -9,6 +9,7 @@ import {
   useSyncExternalStore,
   type ReactNode,
 } from "react";
+import { PwaSetup } from "@/components/planner/install-prompt";
 import { ToastProvider } from "@/components/ui/toast";
 import {
   isThemePreference,
@@ -106,6 +107,7 @@ export function Providers({ children }: { children: ReactNode }) {
   return (
     <MotionConfig reducedMotion="user">
       <ThemeProvider>
+        <PwaSetup />
         <ToastProvider>{children}</ToastProvider>
       </ThemeProvider>
     </MotionConfig>

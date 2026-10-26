@@ -58,6 +58,9 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  // Skip static files and images; run on pages and auth routes.
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|icon.svg|.*\\.(?:png|jpg|jpeg|svg|webp|ico)$).*)"],
+  // Skip static files, images and the installable-app files (manifest,
+  // service worker, offline page); run on pages and auth routes.
+  matcher: [
+    "/((?!_next/static|_next/image|favicon.ico|icon.svg|manifest.webmanifest|sw.js|offline|.*\\.(?:png|jpg|jpeg|svg|webp|ico)$).*)",
+  ],
 };
