@@ -3,7 +3,14 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   poweredByHeader: false,
   // Profile photos are resized in the browser first (~50 KB), but leave room.
-  experimental: { serverActions: { bodySizeLimit: "2mb" } },
+  experimental: {
+    serverActions: { bodySizeLimit: "2mb" },
+    // Keep visited/prefetched tab pages in the browser for 5 minutes instead
+    // of asking the server again on every tap. Safe because the tab pages
+    // carry no data of their own: the schedule lives in the planner store
+    // (loaded once by app/(tabs)/layout.tsx and kept fresh by its actions).
+    staleTimes: { dynamic: 300 },
+  },
   // Baseline security headers. A full Content-Security-Policy is added in
   // Phase 11, once we know every origin the app talks to (Supabase, Anthropic).
   async headers() {

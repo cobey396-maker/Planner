@@ -742,3 +742,45 @@ what's safe and correct to serve old.
 Deploy a new `sw.js` (it's fetched uncached, so browsers see it on the next
 visit), call `skipWaiting()`/`clients.claim()` so it takes over at once, and
 delete old caches on activate. Worst case, a worker that unregisters itself.
+
+---
+
+## Fix: tab switches felt laggy
+
+**What we measured.** On the live site every tab tap waited for a server
+round trip (about 80-110 ms on Wi-Fi, more on cellular, more again when a
+Vercel function is cold), the tab bar didn't move until the new URL arrived,
+and then the page faded in from `blur(8px)` and 98.5% scale over ~0.45 s.
+Rendering itself was fine: 60 fps scrolling, no long JavaScript tasks once a
+tab's code had loaded.
+
+**What we changed.**
+- `components/ui/tab-bar.tsx`: the lens moves to the tapped tab immediately
+  (an optimistic "pending" tab, cleared when the URL catches up), and every
+  tab is prefetched in full.
+- `next.config.ts`: `staleTimes.dynamic = 300`, so visited/prefetched tabs are
+  reused from the browser for 5 minutes. Safe because the tab pages carry no
+  data: the schedule lives in the planner store.
+- `app/(tabs)/template.tsx`: a 0.18 s opacity + 6 px fade. No `filter`, no
+  scale: only properties the GPU can animate without repainting.
+
+Result: highlight in ~7 ms, new tab in ~50 ms, zero server requests while
+switching tabs.
+
+**Interview questions**
+
+**Q1. Why does an app feel slow even when the server is fast?**
+Because perceived speed is about feedback. If nothing changes for 150 ms
+after a tap, it feels broken. Respond to the input instantly (optimistic UI),
+then load; and don't add long animations on top of real waits.
+
+**Q2. Which CSS properties are cheap to animate?**
+`transform` and `opacity`: the compositor moves or fades an already-painted
+layer. `filter`, `width`, `top`, shadows and the like force repaint or
+layout every frame.
+
+**Q3. What is the Next.js Router Cache?**
+An in-memory cache of route payloads in the browser. Prefetched and visited
+routes are reused for `staleTimes` seconds, so navigating back and forth
+doesn't hit the server. Server Actions that change cookies or revalidate
+clear it.

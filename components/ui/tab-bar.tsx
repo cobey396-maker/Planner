@@ -4,6 +4,7 @@ import { CalendarDays, CalendarRange, Flame, Settings, Sparkles, Users, type Luc
 import { motion } from "motion/react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useState } from "react";
 import { cn } from "@/lib/cn";
 import { fluid } from "@/lib/design/motion";
 
@@ -37,6 +38,17 @@ export const APP_TABS: TabItem[] = [
  */
 export function TabBar({ items = APP_TABS }: { items?: TabItem[] }) {
   const pathname = usePathname();
+  // The tab you just tapped, before the new page has arrived. The lens moves
+  // to it at once, so a tap always gets instant feedback, even on a slow
+  // network. Cleared when the URL catches up (set-state-during-render is
+  // React's recommended way to reset state when a value changes).
+  const [pending, setPending] = useState<string | null>(null);
+  const [lastPath, setLastPath] = useState(pathname);
+  if (lastPath !== pathname) {
+    setLastPath(pathname);
+    setPending(null);
+  }
+  const current = pending ?? pathname;
 
   return (
     <nav
@@ -45,11 +57,15 @@ export function TabBar({ items = APP_TABS }: { items?: TabItem[] }) {
     >
       <ul className="glass-pill pointer-events-auto mx-auto mb-3 flex max-w-md rounded-full p-1.5">
         {items.map(({ href, label, icon: Icon }) => {
-          const active = pathname === href || pathname.startsWith(href + "/");
+          const active = current === href || current.startsWith(href + "/");
           return (
             <li key={href} className="flex-1">
               <Link
                 href={href}
+                // Fetch every tab ahead of time (they're tiny: all the data
+                // is already in the planner store), so switching is instant.
+                prefetch
+                onClick={() => setPending(href)}
                 data-tab={href}
                 aria-current={active ? "page" : undefined}
                 className={cn(
